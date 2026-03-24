@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL =
-  import.meta.env.VITE_SUPABASE_URL || "https://bet-potes.vercel.app/";
+  import.meta.env.VITE_SUPABASE_URL || "https://YOUR_PROJECT.supabase.co";
 const SUPABASE_ANON_KEY =
-  import.meta.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_9fXF-b9ovbcRGZqY53IH1w_I-Mz14fv";
+  import.meta.env.VITE_SUPABASE_ANON_KEY || "YOUR_PUBLISHABLE_KEY";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
