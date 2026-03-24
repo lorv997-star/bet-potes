@@ -1,3 +1,144 @@
+const [username, setUsername] = useState("");
+const [password, setPassword] = useState("");
+const [user, setUser] = useState(null);
+
+async function register() {
+  if (!username || !password) {
+    alert("Entre un pseudo et un mot de passe");
+    return; if (!user) {
+  return (
+    <div style={{ padding: 40 }}>
+      <h1>Bet entre potes</h1>
+      <h3>Connexion</h3>
+
+      <input
+        placeholder="Pseudo"
+        value={username}
+        onChange={(e) => setUsername(e.target.value)}
+      />
+
+      <br /><br />
+
+      <input
+        placeholder="Mot de passe"
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+      />
+
+      <br /><br />
+
+      <button onClick={login}>Connexion</button>
+      <button onClick={register}>Créer un compte</button>
+    </div>
+  );
+}
+  }
+
+  const { error } = await supabase
+    .from("users")
+    .insert([{ username, password }]);
+
+  if (error) {
+    alert("Pseudo déjà pris");
+  } else {
+    await supabase.from("scores").insert([
+      { username: username, score: 0, money: 1000 }
+    ]);
+
+    setUser(username);
+    localStorage.setItem("user", username);
+  }
+}
+
+async function login() {
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("username", username)
+    .single();
+
+  if (error || !data) {
+    alert("Utilisateur introuvable");
+    return;
+  }
+
+  if (data.password !== password) {
+    alert("Mot de passe incorrect");
+    return;
+  }
+
+  setUser(username);
+  localStorage.setItem("user", username);
+}
+  if (!username || !password) {
+    alert("Entre un pseudo et un mot de passe");
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from("users")
+    .insert([{ username, password }]);
+
+  if (error) {
+    alert("Pseudo déjà pris");
+  } else {
+    // créer score du joueur
+    await supabase.from("scores").insert([
+      { username: username, score: 0, money: 1000 }
+    ]);
+
+    setUser(username);
+    localStorage.setItem("user", username); 
+  }
+useEffect(() => {
+  const savedUser = localStorage.getItem("user");
+  if (savedUser) setUser(savedUser);
+}, []);
+async function login() {
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("username", username)
+    .single();
+
+  if (error || !data) {
+    alert("Utilisateur introuvable");
+    return;
+  }
+
+  if (data.password !== password) {
+    alert("Mot de passe incorrect");
+    return;
+  }
+
+  setUser(username);
+  localStorage.setItem("user", username);
+}
+async function login() {
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("username", username)
+    .single();
+
+  if (error || !data) {
+    alert("Utilisateur introuvable");
+    return;
+  }
+
+  if (data.password !== password) {
+    alert("Mot de passe incorrect");
+    return;
+  }
+
+  setUser(username);
+  localStorage.setItem("user", username);
+}
+useEffect(() => {
+  const savedUser = localStorage.getItem("user");
+  if (savedUser) setUser(savedUser);
+}, []);
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -8,14 +149,11 @@ const SUPABASE_KEY =
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const STARTING_MONEY = 1000;
 const ADMIN_USERNAMES = ["Tim", "tim", "lory997-star"];
-const ADMIN_CODE = "betboss";
+const DEFAULT_REWARD = 10;
 
 const initialBetForm = {
   title: "",
-  category: "Fun",
-  closes_at: "",
   options: [
     { name: "Oui", odds: 1.8 },
     { name: "Non", odds: 2.1 },
@@ -23,37 +161,25 @@ const initialBetForm = {
 };
 
 export default function App() {
-  const [username, setUsername] = useState(
-    localStorage.getItem("bet-potes-user") || ""
-  );
+  const [username, setUsername] = useState(localStorage.getItem("bet-potes-user") || "");
   const [pseudoDraft, setPseudoDraft] = useState("");
-  const [adminUnlocked, setAdminUnlocked] = useState(false);
-
   const [bets, setBets] = useState([]);
   const [options, setOptions] = useState([]);
   const [wagers, setWagers] = useState([]);
   const [scores, setScores] = useState([]);
   const [proposals, setProposals] = useState([]);
-  const [comments, setComments] = useState([]);
-
+  const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState("open");
   const [betForm, setBetForm] = useState(initialBetForm);
   const [proposalDraft, setProposalDraft] = useState("");
-  const [commentDrafts, setCommentDrafts] = useState({});
-  const [amountDrafts, setAmountDrafts] = useState({});
-
-  const [activeTab, setActiveTab] = useState("open");
-  const [categoryFilter, setCategoryFilter] = useState("Toutes");
-  const [search, setSearch] = useState("");
-  const [sortMode, setSortMode] = useState("newest");
-
   const [isSubmittingBet, setIsSubmittingBet] = useState(false);
   const [isSubmittingProposal, setIsSubmittingProposal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
 
   const isConfigured =
-    !SUPABASE_URL.includes("YOUR_PROJECT") &&
-    !SUPABASE_KEY.includes("YOUR_PUBLISHABLE_KEY");
+    !SUPABASE_URL.includes("YOUR_PROJECT") && !SUPABASE_KEY.includes("YOUR_PUBLISHABLE_KEY");
   const isAdmin = adminUnlocked || ADMIN_USERNAMES.includes(username);
 
   useEffect(() => {
@@ -64,7 +190,6 @@ export default function App() {
 
   useEffect(() => {
     if (!isConfigured) return;
-
     loadAll();
 
     const channel = supabase
@@ -72,32 +197,27 @@ export default function App() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "bets" },
-        () => loadAll()
+        loadAll
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "options" },
-        () => loadAll()
+        loadAll
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "wagers" },
-        () => loadAll()
+        loadAll
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "scores" },
-        () => loadAll()
+        loadAll
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "proposals" },
-        () => loadAll()
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "comments" },
-        () => loadAll()
+        loadAll
       )
       .subscribe();
 
@@ -106,45 +226,20 @@ export default function App() {
     };
   }, [isConfigured]);
 
-  async function ensureProfile(name) {
-    if (!name) return;
-    const existing = scores.find((entry) => entry.username === name);
-    if (!existing) {
-      await supabase.from("scores").upsert({
-        username: name,
-        score: 0,
-        money: STARTING_MONEY,
-      });
-    }
-  }
-
   async function loadAll() {
     setLoading(true);
     setErrorMessage("");
 
-    const [
-      betsRes,
-      optionsRes,
-      wagersRes,
-      scoresRes,
-      proposalsRes,
-      commentsRes,
-    ] = await Promise.all([
+    const [betsRes, optionsRes, wagersRes, scoresRes, proposalsRes] = await Promise.all([
       supabase.from("bets").select("*").order("id", { ascending: false }),
       supabase.from("options").select("*").order("id", { ascending: true }),
       supabase.from("wagers").select("*").order("id", { ascending: false }),
-      supabase.from("scores").select("*").order("money", { ascending: false }),
+      supabase.from("scores").select("*").order("score", { ascending: false }),
       supabase.from("proposals").select("*").order("id", { ascending: false }),
-      supabase.from("comments").select("*").order("id", { ascending: false }),
     ]);
 
     const firstError =
-      betsRes.error ||
-      optionsRes.error ||
-      wagersRes.error ||
-      scoresRes.error ||
-      proposalsRes.error ||
-      commentsRes.error;
+      betsRes.error || optionsRes.error || wagersRes.error || scoresRes.error || proposalsRes.error;
 
     if (firstError) {
       setErrorMessage(firstError.message);
@@ -155,7 +250,6 @@ export default function App() {
     setWagers(wagersRes.data || []);
     setScores(scoresRes.data || []);
     setProposals(proposalsRes.data || []);
-    setComments(commentsRes.data || []);
     setLoading(false);
   }
 
@@ -177,194 +271,53 @@ export default function App() {
     return map;
   }, [wagers]);
 
-  const commentsByBet = useMemo(() => {
+  const userWagers = useMemo(() => {
     const map = {};
-    comments.forEach((comment) => {
-      if (!map[comment.bet_id]) map[comment.bet_id] = [];
-      map[comment.bet_id].push(comment);
+    wagers.forEach((wager) => {
+      map[wager.option_id] = map[wager.option_id] || [];
+      map[wager.option_id].push(wager.username);
     });
     return map;
-  }, [comments]);
-
-  const scoreMap = useMemo(() => {
-    const map = new Map();
-    scores.forEach((entry) => map.set(entry.username, entry));
-    return map;
-  }, [scores]);
-
-  const userProfile =
-    scoreMap.get(username) || { username, score: 0, money: STARTING_MONEY };
+  }, [wagers]);
 
   const leaderboard = useMemo(() => {
-    const names = new Set(scores.map((s) => s.username));
-    wagers.forEach((w) => names.add(w.username));
-    if (username) names.add(username);
+    const scoreMap = new Map(scores.map((entry) => [entry.username, entry.score || 0]));
 
-    return [...names]
-      .map((name) => {
-        const profile =
-          scoreMap.get(name) || {
-            username: name,
-            score: 0,
-            money: STARTING_MONEY,
-          };
-        const played = wagers.filter((w) => w.username === name).length;
-        return {
-          name,
-          score: Number(profile.score || 0),
-          money: Number(profile.money ?? STARTING_MONEY),
-          played,
-        };
-      })
-      .sort(
-        (a, b) =>
-          b.money - a.money ||
-          b.score - a.score ||
-          b.played - a.played ||
-          a.name.localeCompare(b.name)
-      );
-  }, [scores, wagers, username, scoreMap]);
+    wagers.forEach((wager) => {
+      if (!scoreMap.has(wager.username)) {
+        scoreMap.set(wager.username, 0);
+      }
+    });
 
-  const myHistory = useMemo(() => {
-    const optionMap = new Map(options.map((o) => [o.id, o]));
-    const betMap = new Map(bets.map((b) => [b.id, b]));
+    return [...scoreMap.entries()]
+      .map(([name, score]) => ({
+        name,
+        score,
+        betsPlaced: wagers.filter((w) => w.username === name).length,
+      }))
+      .sort((a, b) => b.score - a.score || b.betsPlaced - a.betsPlaced || a.name.localeCompare(b.name));
+  }, [scores, wagers]);
 
-    return wagers
-      .filter((w) => w.username === username)
-      .map((wager) => {
-        const option = optionMap.get(wager.option_id);
-        const bet = option ? betMap.get(option.bet_id) : null;
-        const won = bet?.winning_option_id === option?.id;
-        const amount = Number(wager.amount || 0);
-        const odds = Number(option?.odds || 1);
-        const profit = bet?.resolved
-          ? won
-            ? Math.round(amount * odds - amount)
-            : -amount
-          : 0;
-
-        return { wager, option, bet, won, amount, odds, profit };
-      })
-      .filter((item) => item.bet && item.option)
-      .sort((a, b) => b.wager.id - a.wager.id);
-  }, [wagers, options, bets, username]);
-
-  const userStats = useMemo(() => {
-    const resolved = myHistory.filter((item) => item.bet?.resolved);
-    const wins = resolved.filter((item) => item.won).length;
-    const losses = resolved.length - wins;
-    const totalStaked = myHistory.reduce((sum, item) => sum + item.amount, 0);
-    const totalProfit = resolved.reduce((sum, item) => sum + item.profit, 0);
-    const roi = totalStaked > 0 ? Math.round((totalProfit / totalStaked) * 100) : 0;
-    return { wins, losses, totalStaked, totalProfit, roi };
-  }, [myHistory]);
-
-  const badges = useMemo(() => {
-    const items = [];
-    if (userStats.wins >= 5) items.push("🧠 Pro bettor");
-    if (leaderboard[0]?.name === username) items.push("🐐 Goat");
-    if (userStats.roi >= 50 && userStats.totalStaked >= 100)
-      items.push("📈 ROI monster");
-    if (
-      myHistory.some(
-        (item) => item.bet?.resolved && item.won && Number(item.odds) >= 3
-      )
-    ) {
-      items.push("🎯 Sniper grosse cote");
-    }
-    if (
-      myHistory.some(
-        (item) => item.bet?.resolved && !item.won && item.amount >= 500
-      )
-    ) {
-      items.push("💀 All-in raté");
-    }
-    if (myHistory.length >= 10) items.push("🔥 Volume trader");
-    return items;
-  }, [userStats, leaderboard, username, myHistory]);
-
-  const categories = useMemo(() => {
-    const set = new Set(["Toutes"]);
-    bets.forEach((bet) => set.add(bet.category || "Fun"));
-    return [...set];
-  }, [bets]);
-
-  const marketStats = useMemo(() => {
+  const stats = useMemo(() => {
     const openCount = bets.filter((bet) => !bet.resolved).length;
     const resolvedCount = bets.filter((bet) => bet.resolved).length;
-    const players = new Set(wagers.map((w) => w.username));
-    if (username) players.add(username);
-    const totalVolume = wagers.reduce(
-      (sum, wager) => sum + Number(wager.amount || 0),
-      0
-    );
-    return { openCount, resolvedCount, players: players.size, totalVolume };
+    const playerCount = new Set(wagers.map((w) => w.username)).size + (username ? 1 : 0);
+    return { openCount, resolvedCount, playerCount };
   }, [bets, wagers, username]);
 
   const visibleBets = useMemo(() => {
-    let data = bets.filter((bet) => {
-      const matchesTab =
-        activeTab === "all"
-          ? true
-          : activeTab === "open"
-          ? !bet.resolved
-          : bet.resolved;
-      const matchesCategory =
-        categoryFilter === "Toutes"
-          ? true
-          : (bet.category || "Fun") === categoryFilter;
-      const matchesSearch = bet.title
-        .toLowerCase()
-        .includes(search.toLowerCase());
-
-      return matchesTab && matchesCategory && matchesSearch;
+    return bets.filter((bet) => {
+      const inTab = activeTab === "all" ? true : activeTab === "open" ? !bet.resolved : bet.resolved;
+      const matchesSearch = bet.title.toLowerCase().includes(search.toLowerCase());
+      return inTab && matchesSearch;
     });
+  }, [bets, activeTab, search]);
 
-    if (sortMode === "newest") {
-      data.sort((a, b) => (b.id || 0) - (a.id || 0));
-    } else if (sortMode === "oldest") {
-      data.sort((a, b) => (a.id || 0) - (b.id || 0));
-    } else if (sortMode === "volume") {
-      data.sort((a, b) => {
-        const volA = (optionsByBet[a.id] || []).reduce(
-          (sum, option) =>
-            sum +
-            (wagersByOption[option.id] || []).reduce(
-              (acc, w) => acc + Number(w.amount || 0),
-              0
-            ),
-          0
-        );
-        const volB = (optionsByBet[b.id] || []).reduce(
-          (sum, option) =>
-            sum +
-            (wagersByOption[option.id] || []).reduce(
-              (acc, w) => acc + Number(w.amount || 0),
-              0
-            ),
-          0
-        );
-        return volB - volA;
-      });
-    }
-
-    return data;
-  }, [
-    bets,
-    activeTab,
-    categoryFilter,
-    search,
-    sortMode,
-    optionsByBet,
-    wagersByOption,
-  ]);
-
-  async function handleLogin(e) {
+  function handleLogin(e) {
     e.preventDefault();
     const clean = pseudoDraft.trim();
     if (!clean) return;
     setUsername(clean);
-    await ensureProfile(clean);
     setPseudoDraft("");
   }
 
@@ -373,15 +326,6 @@ export default function App() {
     setUsername("");
     setPseudoDraft("");
     setAdminUnlocked(false);
-  }
-
-  function unlockAdmin() {
-    const code = window.prompt("Code admin ?");
-    if (code === ADMIN_CODE) {
-      setAdminUnlocked(true);
-    } else if (code) {
-      setErrorMessage("Code admin incorrect.");
-    }
   }
 
   function updateBetOption(index, field, value) {
@@ -403,7 +347,7 @@ export default function App() {
   function removeOptionField(index) {
     setBetForm((current) => ({
       ...current,
-      options: current.options.filter((_, i) => i !== index),
+      options: current.options.filter((_, optionIndex) => optionIndex !== index),
     }));
   }
 
@@ -412,7 +356,6 @@ export default function App() {
     if (!isAdmin) return;
 
     const title = betForm.title.trim();
-    const category = (betForm.category || "Fun").trim() || "Fun";
     const cleanedOptions = betForm.options
       .map((option) => ({
         name: option.name.trim(),
@@ -430,14 +373,7 @@ export default function App() {
 
     const { data: insertedBet, error: betError } = await supabase
       .from("bets")
-      .insert({
-        title,
-        category,
-        resolved: false,
-        closes_at: betForm.closes_at
-          ? new Date(betForm.closes_at).toISOString()
-          : null,
-      })
+      .insert({ title, resolved: false })
       .select()
       .single();
 
@@ -465,84 +401,45 @@ export default function App() {
     await loadAll();
   }
 
-  async function placeBet(bet, option) {
-    if (!username || bet.resolved) return;
+  async function placeBet(betId, optionId) {
+    if (!username) return;
+    setErrorMessage("");
 
-    await ensureProfile(username);
-
-    const amount = Number(amountDrafts[bet.id] || 0);
-    if (!amount || amount <= 0) {
-      setErrorMessage("Entre un montant valide.");
-      return;
-    }
-
-    const profile =
-      scoreMap.get(username) || { score: 0, money: STARTING_MONEY };
-
-    if (amount > Number(profile.money || 0)) {
-      setErrorMessage("Tu n'as pas assez d'argent fictif.");
-      return;
-    }
-
-    const marketOptionIds = (optionsByBet[bet.id] || []).map((o) => o.id);
-    const existing = wagers.find(
-      (w) => w.username === username && marketOptionIds.includes(w.option_id)
+    const allOptionIds = (optionsByBet[betId] || []).map((option) => option.id);
+    const currentUserAlreadyPickedThisOption = wagers.some(
+      (wager) => wager.username === username && wager.option_id === optionId
     );
 
-    if (existing) {
-      setErrorMessage("Une seule position par marché.");
+    if (currentUserAlreadyPickedThisOption) return;
+
+    if (allOptionIds.length > 0) {
+      await supabase
+        .from("wagers")
+        .delete()
+        .eq("username", username)
+        .in("option_id", allOptionIds);
+    }
+
+    const { error } = await supabase.from("wagers").insert({ username, option_id: optionId });
+
+    if (error) {
+      setErrorMessage(error.message);
       return;
     }
 
-    const { error: wagerError } = await supabase.from("wagers").insert({
-      username,
-      option_id: option.id,
-      amount,
-    });
-
-    if (wagerError) {
-      setErrorMessage(wagerError.message);
-      return;
-    }
-
-    await supabase.from("scores").upsert({
-      username,
-      score: Number(profile.score || 0),
-      money: Number(profile.money || 0) - amount,
-    });
-
-    setAmountDrafts((current) => ({ ...current, [bet.id]: "" }));
     await loadAll();
   }
 
   async function resolveBet(bet, winningOption) {
     if (!isAdmin || bet.resolved) return;
+    setErrorMessage("");
 
-    const marketOptions = optionsByBet[bet.id] || [];
-    const optionIds = marketOptions.map((option) => option.id);
-    const marketWagers = wagers.filter((w) => optionIds.includes(w.option_id));
+    const reward = Math.max(DEFAULT_REWARD, Math.round(DEFAULT_REWARD * (Number(winningOption.odds) || 1)));
+    const winners = (wagersByOption[winningOption.id] || []).map((wager) => wager.username);
 
-    const profileMap = new Map(
-      scores.map((profile) => [profile.username, { ...profile }])
-    );
-
-    marketWagers.forEach((wager) => {
-      const profile =
-        profileMap.get(wager.username) || {
-          username: wager.username,
-          score: 0,
-          money: STARTING_MONEY,
-        };
-
-      if (wager.option_id === winningOption.id) {
-        const odds = Number(winningOption.odds || 1);
-        profile.money =
-          Number(profile.money || 0) +
-          Math.round(Number(wager.amount || 0) * odds);
-        profile.score = Number(profile.score || 0) + Math.max(10, Math.round(10 * odds));
-      }
-
-      profileMap.set(wager.username, profile);
+    const updates = winners.map((winner) => {
+      const currentScore = scores.find((entry) => entry.username === winner)?.score || 0;
+      return { username: winner, score: currentScore + reward };
     });
 
     const { error: betError } = await supabase
@@ -552,46 +449,18 @@ export default function App() {
 
     if (betError) {
       setErrorMessage(
-        "Ajoute la colonne winning_option_id dans la table bets."
+        "Ajoute la colonne winning_option_id dans Supabase avant de résoudre un pari."
       );
       return;
     }
 
-    await supabase.from("scores").upsert(
-      [...profileMap.values()].map((profile) => ({
-        username: profile.username,
-        score: Number(profile.score || 0),
-        money: Number(profile.money ?? STARTING_MONEY),
-      }))
-    );
-
-    await loadAll();
-  }
-
-  async function resetSeason() {
-    if (!isAdmin) return;
-    const ok = window.confirm(
-      "Reset complet de la saison ? Les scores reviennent à 0, l'argent à 1000, les wagers et commentaires sont vidés."
-    );
-    if (!ok) return;
-
-    const usernames = new Set([
-      ...scores.map((s) => s.username),
-      ...wagers.map((w) => w.username),
-    ]);
-
-    const resetRows = [...usernames].map((name) => ({
-      username: name,
-      score: 0,
-      money: STARTING_MONEY,
-    }));
-
-    if (resetRows.length > 0) {
-      await supabase.from("scores").upsert(resetRows);
+    if (updates.length > 0) {
+      const { error: scoreError } = await supabase.from("scores").upsert(updates);
+      if (scoreError) {
+        setErrorMessage(scoreError.message);
+      }
     }
 
-    await supabase.from("wagers").delete().neq("id", -1);
-    await supabase.from("comments").delete().neq("id", -1);
     await loadAll();
   }
 
@@ -600,7 +469,6 @@ export default function App() {
     if (!proposalDraft.trim() || !username) return;
 
     setIsSubmittingProposal(true);
-
     const { error } = await supabase.from("proposals").insert({
       text: proposalDraft.trim(),
       username,
@@ -616,12 +484,10 @@ export default function App() {
     await loadAll();
   }
 
-  function convertProposalToBet(proposal) {
+  async function convertProposalToBet(proposal) {
     if (!isAdmin) return;
     setBetForm({
       title: proposal.text,
-      category: "Fun",
-      closes_at: "",
       options: [
         { name: "Oui", odds: 1.8 },
         { name: "Non", odds: 2.1 },
@@ -636,18 +502,13 @@ export default function App() {
     await loadAll();
   }
 
-  async function addComment(betId) {
-    const text = (commentDrafts[betId] || "").trim();
-    if (!text || !username) return;
-
-    await supabase.from("comments").insert({
-      bet_id: betId,
-      username,
-      text,
-    });
-
-    setCommentDrafts((current) => ({ ...current, [betId]: "" }));
-    await loadAll();
+  function unlockAdmin() {
+    const code = window.prompt("Code admin ?");
+    if (code === "betboss") {
+      setAdminUnlocked(true);
+    } else if (code) {
+      setErrorMessage("Code admin incorrect.");
+    }
   }
 
   const topPlayer = leaderboard[0];
@@ -659,8 +520,8 @@ export default function App() {
         <div style={styles.centerCard}>
           <h1 style={styles.heroTitle}>⚙️ Configure Supabase</h1>
           <p style={styles.muted}>
-            Ajoute <strong>VITE_SUPABASE_URL</strong> et{" "}
-            <strong>VITE_SUPABASE_ANON_KEY</strong> dans Vercel.
+            Mets tes vraies valeurs dans <strong>VITE_SUPABASE_URL</strong> et
+            <strong> VITE_SUPABASE_ANON_KEY</strong> ou directement dans le fichier App.jsx.
           </p>
         </div>
       </div>
@@ -675,11 +536,10 @@ export default function App() {
           <div style={styles.glowOrbA} />
           <div style={styles.glowOrbB} />
           <div style={styles.loginCard}>
-            <div style={styles.heroBadge}>Version finale</div>
+            <div style={styles.heroBadge}>Marché fun entre potes</div>
             <h1 style={styles.heroTitle}>🎲 Bet entre potes</h1>
             <p style={styles.heroText}>
-              Marchés privés entre potes, bankroll fictive, commentaires,
-              badges, historique, leaderboard et admin.
+              Version V2 style Polymarket : plus clean, plus fun, plus rapide. Entre ton pseudo et va cuisiner le leaderboard.
             </p>
             <form onSubmit={handleLogin} style={styles.loginForm}>
               <input
@@ -693,10 +553,9 @@ export default function App() {
               </button>
             </form>
             <div style={styles.loginFeatures}>
-              <span style={styles.chip}>1000$ de départ</span>
-              <span style={styles.chip}>Commentaires</span>
-              <span style={styles.chip}>Historique</span>
-              <span style={styles.chip}>Badges</span>
+              <span style={styles.chip}>Paris multi-choix</span>
+              <span style={styles.chip}>Classement live</span>
+              <span style={styles.chip}>Propositions de paris</span>
             </div>
           </div>
         </div>
@@ -707,22 +566,19 @@ export default function App() {
   return (
     <div style={styles.page}>
       <style>{globalStyles}</style>
-
       <div style={styles.topbar}>
-        <div style={styles.logoRow}>
-          <div style={styles.logo}>◆</div>
-          <div>
-            <div style={styles.brand}>Bet entre potes</div>
-            <div style={styles.brandSub}>final edition • private market</div>
+        <div>
+          <div style={styles.logoRow}>
+            <div style={styles.logo}>◆</div>
+            <div>
+              <div style={styles.brand}>Bet entre potes</div>
+              <div style={styles.brandSub}>Marché fun • version V2</div>
+            </div>
           </div>
         </div>
 
         <div style={styles.topbarRight}>
           <div style={styles.userPill}>👤 {username}</div>
-          <div style={styles.userPill}>
-            💸 {Number(userProfile.money || STARTING_MONEY)}$
-          </div>
-          <div style={styles.userPill}>🏆 {Number(userProfile.score || 0)} pts</div>
           {!isAdmin && (
             <button style={styles.ghostButton} onClick={unlockAdmin}>
               Débloquer admin
@@ -736,46 +592,36 @@ export default function App() {
 
       <div style={styles.heroGrid}>
         <div style={styles.heroCardLarge}>
-          <div style={styles.heroSmall}>Marché principal</div>
-          <h2 style={styles.heroBigTitle}>
-            Parie comme un trader. Brag comme un champion.
-          </h2>
+          <div style={styles.heroSmall}>Marché du moment</div>
+          <h2 style={styles.heroBigTitle}>Parie, propose, grimpe au classement.</h2>
           <p style={styles.muted}>
-            Style inspiré Polymarket, mais pensé pour le fun entre potes :
-            bankroll fictive, ROI, historique, commentaires et catégories.
+            Choisis ton camp, surveille les cotes, regarde ce que les autres pensent et transforme chaque débat débile entre potes en marché légendaire.
           </p>
-
           <div style={styles.statRow}>
             <div style={styles.statBox}>
-              <strong>{marketStats.openCount}</strong>
+              <strong>{stats.openCount}</strong>
               <span>Marchés ouverts</span>
             </div>
             <div style={styles.statBox}>
-              <strong>{marketStats.players}</strong>
-              <span>Joueurs actifs</span>
+              <strong>{stats.resolvedCount}</strong>
+              <span>Marchés résolus</span>
             </div>
             <div style={styles.statBox}>
-              <strong>{marketStats.totalVolume}$</strong>
-              <span>Volume total</span>
+              <strong>{stats.playerCount}</strong>
+              <span>Joueurs actifs</span>
             </div>
           </div>
         </div>
 
         <div style={styles.heroCardSide}>
-          <div style={styles.heroSmall}>Top trader</div>
-          <div style={styles.topPlayerName}>
-            {topPlayer ? topPlayer.name : "Personne"}
-          </div>
-          <div style={styles.topPlayerScore}>
-            {topPlayer ? `${topPlayer.money}$` : "1000$"}
-          </div>
-          <div style={styles.muted}>
-            Le leaderboard principal se base sur l’argent fictif.
-          </div>
+          <div style={styles.heroSmall}>Top joueur</div>
+          <div style={styles.topPlayerName}>{topPlayer ? topPlayer.name : "Personne"}</div>
+          <div style={styles.topPlayerScore}>{topPlayer ? `${topPlayer.score} pts` : "0 pt"}</div>
+          <div style={styles.muted}>Les gagnants prennent {DEFAULT_REWARD} points minimum, et plus si la cote est élevée.</div>
         </div>
       </div>
 
-      {errorMessage ? <div style={styles.errorBanner}>{errorMessage}</div> : null}
+      {errorMessage && <div style={styles.errorBanner}>{errorMessage}</div>}
 
       <div style={styles.contentGrid}>
         <div style={styles.mainColumn}>
@@ -783,53 +629,19 @@ export default function App() {
             <div style={styles.panelCard}>
               <div style={styles.panelHeader}>
                 <div>
-                  <h3 style={styles.panelTitle}>Panel admin final</h3>
-                  <p style={styles.muted}>
-                    Crée, catégorise, résous et reset la saison.
-                  </p>
+                  <h3 style={styles.panelTitle}>Panel admin</h3>
+                  <p style={styles.muted}>Crée un marché propre avec plusieurs options et des cotes manuelles.</p>
                 </div>
-                <div style={styles.proposalActions}>
-                  <span style={styles.adminBadge}>ADMIN</span>
-                  <button style={styles.smallDangerButton} onClick={resetSeason}>
-                    Reset saison
-                  </button>
-                </div>
+                <span style={styles.adminBadge}>ADMIN</span>
               </div>
 
               <form onSubmit={createBet} style={styles.formGrid}>
                 <input
                   style={{ ...styles.input, gridColumn: "1 / -1" }}
-                  placeholder="Titre du pari"
+                  placeholder="Titre du pari — ex: Mbappé marque ce soir ?"
                   value={betForm.title}
                   onChange={(e) =>
-                    setBetForm((current) => ({
-                      ...current,
-                      title: e.target.value,
-                    }))
-                  }
-                />
-
-                <input
-                  style={styles.input}
-                  placeholder="Catégorie"
-                  value={betForm.category}
-                  onChange={(e) =>
-                    setBetForm((current) => ({
-                      ...current,
-                      category: e.target.value,
-                    }))
-                  }
-                />
-
-                <input
-                  style={styles.input}
-                  type="datetime-local"
-                  value={betForm.closes_at}
-                  onChange={(e) =>
-                    setBetForm((current) => ({
-                      ...current,
-                      closes_at: e.target.value,
-                    }))
+                    setBetForm((current) => ({ ...current, title: e.target.value }))
                   }
                 />
 
@@ -839,26 +651,19 @@ export default function App() {
                       style={{ ...styles.input, flex: 1 }}
                       placeholder={`Option ${index + 1}`}
                       value={option.name}
-                      onChange={(e) =>
-                        updateBetOption(index, "name", e.target.value)
-                      }
+                      onChange={(e) => updateBetOption(index, "name", e.target.value)}
                     />
                     <input
                       style={{ ...styles.input, width: 90 }}
                       type="number"
                       step="0.1"
                       min="1"
+                      placeholder="Cote"
                       value={option.odds}
-                      onChange={(e) =>
-                        updateBetOption(index, "odds", e.target.value)
-                      }
+                      onChange={(e) => updateBetOption(index, "odds", e.target.value)}
                     />
                     {betForm.options.length > 2 && (
-                      <button
-                        type="button"
-                        style={styles.smallDangerButton}
-                        onClick={() => removeOptionField(index)}
-                      >
+                      <button type="button" style={styles.smallDangerButton} onClick={() => removeOptionField(index)}>
                         ✕
                       </button>
                     )}
@@ -866,19 +671,11 @@ export default function App() {
                 ))}
 
                 <div style={styles.formActions}>
-                  <button
-                    type="button"
-                    style={styles.ghostButton}
-                    onClick={addOptionField}
-                  >
+                  <button type="button" style={styles.ghostButton} onClick={addOptionField}>
                     + Ajouter une option
                   </button>
-                  <button
-                    type="submit"
-                    style={styles.primaryButton}
-                    disabled={isSubmittingBet}
-                  >
-                    {isSubmittingBet ? "Création..." : "Publier"}
+                  <button type="submit" style={styles.primaryButton} disabled={isSubmittingBet}>
+                    {isSubmittingBet ? "Création..." : "Publier le marché"}
                   </button>
                 </div>
               </form>
@@ -889,10 +686,7 @@ export default function App() {
             <div style={styles.panelHeader}>
               <div>
                 <h3 style={styles.panelTitle}>Marchés</h3>
-                <p style={styles.muted}>
-                  Choisis une position, mise un montant, et fais grossir ta
-                  bankroll.
-                </p>
+                <p style={styles.muted}>Version inspirée Polymarket, mais pensée pour le chaos entre collègues.</p>
               </div>
             </div>
 
@@ -913,48 +707,21 @@ export default function App() {
                 ))}
               </div>
 
-              <div style={styles.tabRow}>
-                <select
-                  style={styles.select}
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
-                >
-                  {categories.map((category) => (
-                    <option key={category}>{category}</option>
-                  ))}
-                </select>
-
-                <select
-                  style={styles.select}
-                  value={sortMode}
-                  onChange={(e) => setSortMode(e.target.value)}
-                >
-                  <option value="newest">Plus récents</option>
-                  <option value="oldest">Plus anciens</option>
-                  <option value="volume">Plus de volume</option>
-                </select>
-
-                <input
-                  style={styles.searchInput}
-                  placeholder="Rechercher un marché"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
+              <input
+                style={styles.searchInput}
+                placeholder="Rechercher un marché"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
             </div>
 
-            {loading ? <div style={styles.loadingBox}>Chargement...</div> : null}
+            {loading ? <div style={styles.loadingBox}>Chargement des marchés...</div> : null}
 
             <div style={styles.marketList}>
               {visibleBets.map((bet) => {
                 const marketOptions = optionsByBet[bet.id] || [];
-                const totalVolume = marketOptions.reduce(
-                  (sum, option) =>
-                    sum +
-                    (wagersByOption[option.id] || []).reduce(
-                      (acc, wager) => acc + Number(wager.amount || 0),
-                      0
-                    ),
+                const totalBets = marketOptions.reduce(
+                  (sum, option) => sum + ((wagersByOption[option.id] || []).length || 0),
                   0
                 );
 
@@ -963,55 +730,22 @@ export default function App() {
                     <div style={styles.marketHeader}>
                       <div>
                         <div style={styles.marketMeta}>
-                          <span
-                            style={bet.resolved ? styles.resolvedPill : styles.openPill}
-                          >
+                          <span style={bet.resolved ? styles.resolvedPill : styles.openPill}>
                             {bet.resolved ? "Résolu" : "Ouvert"}
                           </span>
-                          <span style={styles.marketCount}>
-                            {(bet.category || "Fun").toUpperCase()}
-                          </span>
-                          <span style={styles.marketCount}>
-                            Volume {totalVolume}$
-                          </span>
+                          <span style={styles.marketCount}>{totalBets} pari(s)</span>
                         </div>
                         <h4 style={styles.marketTitle}>{bet.title}</h4>
                       </div>
                     </div>
 
-                    {!bet.resolved && (
-                      <div style={styles.betAmountRow}>
-                        <input
-                          style={styles.input}
-                          type="number"
-                          min="1"
-                          placeholder="Montant à miser"
-                          value={amountDrafts[bet.id] || ""}
-                          onChange={(e) =>
-                            setAmountDrafts((current) => ({
-                              ...current,
-                              [bet.id]: e.target.value,
-                            }))
-                          }
-                        />
-                      </div>
-                    )}
-
                     <div style={styles.optionsGrid}>
                       {marketOptions.map((option) => {
                         const optionWagers = wagersByOption[option.id] || [];
-                        const optionVolume = optionWagers.reduce(
-                          (sum, wager) => sum + Number(wager.amount || 0),
-                          0
-                        );
-                        const share =
-                          totalVolume > 0
-                            ? Math.round((optionVolume / totalVolume) * 100)
-                            : 0;
-
-                        const pickedByUser = optionWagers.some(
-                          (w) => w.username === username
-                        );
+                        const optionPercentage = totalBets
+                          ? Math.round((optionWagers.length / totalBets) * 100)
+                          : 0;
+                        const pickedByUser = (userWagers[option.id] || []).includes(username);
                         const isWinner = bet.winning_option_id === option.id;
 
                         return (
@@ -1022,28 +756,19 @@ export default function App() {
                               ...(pickedByUser ? styles.optionCardPicked : {}),
                               ...(isWinner ? styles.optionCardWinner : {}),
                             }}
-                            onClick={() => !bet.resolved && placeBet(bet, option)}
+                            onClick={() => !bet.resolved && placeBet(bet.id, option.id)}
                             disabled={bet.resolved}
                           >
                             <div style={styles.optionTop}>
                               <span style={styles.optionName}>{option.name}</span>
-                              <span style={styles.optionOdds}>
-                                x{Number(option.odds || 1).toFixed(1)}
-                              </span>
+                              <span style={styles.optionOdds}>x{Number(option.odds || 1).toFixed(1)}</span>
                             </div>
-
                             <div style={styles.optionBottom}>
-                              <span>{share}% du volume</span>
-                              <span>{optionVolume}$</span>
+                              <span>{optionPercentage}% du marché</span>
+                              <span>{optionWagers.length} vote(s)</span>
                             </div>
-
-                            {pickedByUser && !bet.resolved ? (
-                              <span style={styles.youPicked}>Ton pick</span>
-                            ) : null}
-
-                            {isWinner ? (
-                              <span style={styles.winnerBadge}>Gagnant</span>
-                            ) : null}
+                            {pickedByUser && !bet.resolved ? <span style={styles.youPicked}>Ton pick</span> : null}
+                            {isWinner ? <span style={styles.winnerBadge}>Gagnant</span> : null}
                           </button>
                         );
                       })}
@@ -1051,7 +776,7 @@ export default function App() {
 
                     {isAdmin && !bet.resolved && marketOptions.length > 0 && (
                       <div style={styles.resolveRow}>
-                        <span style={styles.resolveLabel}>Résoudre :</span>
+                        <span style={styles.resolveLabel}>Résoudre le marché :</span>
                         {marketOptions.map((option) => (
                           <button
                             key={option.id}
@@ -1063,37 +788,6 @@ export default function App() {
                         ))}
                       </div>
                     )}
-
-                    <div style={styles.commentsBox}>
-                      <h5 style={styles.commentTitle}>Commentaires</h5>
-                      <div style={styles.commentInputRow}>
-                        <input
-                          style={styles.input}
-                          placeholder="Lâche ton avis..."
-                          value={commentDrafts[bet.id] || ""}
-                          onChange={(e) =>
-                            setCommentDrafts((current) => ({
-                              ...current,
-                              [bet.id]: e.target.value,
-                            }))
-                          }
-                        />
-                        <button
-                          style={styles.smallPrimaryButton}
-                          onClick={() => addComment(bet.id)}
-                        >
-                          Envoyer
-                        </button>
-                      </div>
-
-                      <div style={styles.commentList}>
-                        {(commentsByBet[bet.id] || []).slice(0, 5).map((comment) => (
-                          <div key={comment.id} style={styles.commentItem}>
-                            <strong>{comment.username}</strong> — {comment.text}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
                   </div>
                 );
               })}
@@ -1110,7 +804,7 @@ export default function App() {
             <div style={styles.panelHeader}>
               <div>
                 <h3 style={styles.panelTitle}>🏆 Leaderboard</h3>
-                <p style={styles.muted}>Classé par argent fictif.</p>
+                <p style={styles.muted}>Le vrai juge de paix entre potes.</p>
               </div>
             </div>
 
@@ -1121,91 +815,14 @@ export default function App() {
                     <div style={styles.rankBubble}>{index + 1}</div>
                     <div>
                       <div style={styles.leaderName}>{entry.name}</div>
-                      <div style={styles.leaderSub}>{entry.played} pari(s)</div>
+                      <div style={styles.leaderSub}>{entry.betsPlaced} pari(s) joué(s)</div>
                     </div>
                   </div>
-                  <div style={styles.leaderScore}>{entry.money}$</div>
+                  <div style={styles.leaderScore}>{entry.score} pts</div>
                 </div>
               ))}
 
-              {leaderboard.length === 0 && (
-                <div style={styles.emptyState}>Aucun score pour l’instant.</div>
-              )}
-            </div>
-          </div>
-
-          <div style={styles.panelCard}>
-            <div style={styles.panelHeader}>
-              <div>
-                <h3 style={styles.panelTitle}>📊 Ton profil</h3>
-                <p style={styles.muted}>Historique, ROI et badges.</p>
-              </div>
-            </div>
-
-            <div style={styles.profileStats}>
-              <div style={styles.statMini}>
-                <strong>{userStats.wins}</strong>
-                <span>Victoires</span>
-              </div>
-              <div style={styles.statMini}>
-                <strong>{userStats.losses}</strong>
-                <span>Défaites</span>
-              </div>
-              <div style={styles.statMini}>
-                <strong>{userStats.roi}%</strong>
-                <span>ROI</span>
-              </div>
-              <div style={styles.statMini}>
-                <strong>{userStats.totalProfit}$</strong>
-                <span>Profit</span>
-              </div>
-            </div>
-
-            <div style={styles.badgesWrap}>
-              {badges.length > 0 ? (
-                badges.map((badge) => (
-                  <span key={badge} style={styles.chip}>
-                    {badge}
-                  </span>
-                ))
-              ) : (
-                <div style={styles.emptyState}>Pas encore de badge.</div>
-              )}
-            </div>
-
-            <div style={styles.historyWrap}>
-              <h4 style={styles.sectionTitle}>Historique</h4>
-              {myHistory.slice(0, 8).map((item) => (
-                <div key={item.wager.id} style={styles.historyItem}>
-                  <div>
-                    <div style={styles.historyTitle}>{item.bet.title}</div>
-                    <div style={styles.historySub}>
-                      {item.option.name} • mise {item.amount}$ • x
-                      {Number(item.odds).toFixed(1)}
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      ...styles.historyProfit,
-                      color: item.bet.resolved
-                        ? item.won
-                          ? "#7dffbb"
-                          : "#ff9b9b"
-                        : "#c8d0ea",
-                    }}
-                  >
-                    {item.bet.resolved
-                      ? item.won
-                        ? `+${item.profit}$`
-                        : `${item.profit}$`
-                      : "En cours"}
-                  </div>
-                </div>
-              ))}
-
-              {myHistory.length === 0 && (
-                <div style={styles.emptyState}>Aucun pari pour l’instant.</div>
-              )}
+              {leaderboard.length === 0 && <div style={styles.emptyState}>Aucun score pour l’instant.</div>}
             </div>
           </div>
 
@@ -1213,22 +830,18 @@ export default function App() {
             <div style={styles.panelHeader}>
               <div>
                 <h3 style={styles.panelTitle}>💡 Proposer un pari</h3>
-                <p style={styles.muted}>Lâche tes idées à l’admin.</p>
+                <p style={styles.muted}>Balance tes idées de marché à l’admin.</p>
               </div>
             </div>
 
             <form onSubmit={submitProposal} style={styles.proposalForm}>
               <textarea
                 style={styles.textarea}
-                placeholder="Ex: Qui sera en retard demain ?"
+                placeholder="Ex: Qui sera en retard demain matin ?"
                 value={proposalDraft}
                 onChange={(e) => setProposalDraft(e.target.value)}
               />
-              <button
-                type="submit"
-                style={styles.primaryButton}
-                disabled={isSubmittingProposal}
-              >
+              <button type="submit" style={styles.primaryButton} disabled={isSubmittingProposal}>
                 {isSubmittingProposal ? "Envoi..." : "Envoyer l’idée"}
               </button>
             </form>
@@ -1240,19 +853,12 @@ export default function App() {
                     <div style={styles.proposalText}>{proposal.text}</div>
                     <div style={styles.proposalMeta}>par {proposal.username}</div>
                   </div>
-
                   {isAdmin && (
                     <div style={styles.proposalActions}>
-                      <button
-                        style={styles.smallPrimaryButton}
-                        onClick={() => convertProposalToBet(proposal)}
-                      >
+                      <button style={styles.smallPrimaryButton} onClick={() => convertProposalToBet(proposal)}>
                         Utiliser
                       </button>
-                      <button
-                        style={styles.smallDangerButton}
-                        onClick={() => deleteProposal(proposal.id)}
-                      >
+                      <button style={styles.smallDangerButton} onClick={() => deleteProposal(proposal.id)}>
                         Suppr.
                       </button>
                     </div>
@@ -1260,9 +866,7 @@ export default function App() {
                 </div>
               ))}
 
-              {proposals.length === 0 && (
-                <div style={styles.emptyState}>Aucune proposition.</div>
-              )}
+              {proposals.length === 0 && <div style={styles.emptyState}>Aucune proposition pour l’instant.</div>}
             </div>
           </div>
         </div>
@@ -1279,7 +883,7 @@ const globalStyles = `
     background: radial-gradient(circle at top, #131c3b 0%, #070b17 45%, #04060d 100%);
     color: #f5f7ff;
   }
-  button, input, textarea, select {
+  button, input, textarea {
     font: inherit;
   }
 `;
@@ -1429,16 +1033,14 @@ const styles = {
   heroCardLarge: {
     padding: 28,
     borderRadius: 28,
-    background:
-      "linear-gradient(135deg, rgba(18,25,48,0.95) 0%, rgba(8,12,24,0.95) 100%)",
+    background: "linear-gradient(135deg, rgba(18,25,48,0.95) 0%, rgba(8,12,24,0.95) 100%)",
     border: "1px solid rgba(255,255,255,0.08)",
     boxShadow: "0 18px 50px rgba(0,0,0,0.3)",
   },
   heroCardSide: {
     padding: 24,
     borderRadius: 28,
-    background:
-      "linear-gradient(135deg, rgba(8,42,31,0.95) 0%, rgba(7,13,24,0.95) 100%)",
+    background: "linear-gradient(135deg, rgba(8,42,31,0.95) 0%, rgba(7,13,24,0.95) 100%)",
     border: "1px solid rgba(65,255,180,0.15)",
   },
   heroSmall: {
@@ -1560,14 +1162,6 @@ const styles = {
     padding: "14px 16px",
     outline: "none",
   },
-  select: {
-    background: "rgba(255,255,255,0.06)",
-    color: "#f5f7ff",
-    border: "1px solid rgba(255,255,255,0.1)",
-    borderRadius: 14,
-    padding: "12px 14px",
-    outline: "none",
-  },
   primaryButton: {
     border: "none",
     borderRadius: 16,
@@ -1648,8 +1242,7 @@ const styles = {
   marketCard: {
     borderRadius: 22,
     padding: 18,
-    background:
-      "linear-gradient(180deg, rgba(12,18,34,0.95) 0%, rgba(7,11,24,0.95) 100%)",
+    background: "linear-gradient(180deg, rgba(12,18,34,0.95) 0%, rgba(7,11,24,0.95) 100%)",
     border: "1px solid rgba(255,255,255,0.07)",
   },
   marketHeader: {
@@ -1693,9 +1286,6 @@ const styles = {
     margin: 0,
     fontSize: 24,
     letterSpacing: "-0.03em",
-  },
-  betAmountRow: {
-    marginBottom: 14,
   },
   optionsGrid: {
     display: "grid",
@@ -1775,30 +1365,6 @@ const styles = {
     color: "#9aa5c3",
     marginRight: 6,
   },
-  commentsBox: {
-    marginTop: 16,
-    paddingTop: 14,
-    borderTop: "1px solid rgba(255,255,255,0.08)",
-  },
-  commentTitle: {
-    margin: "0 0 10px",
-    fontSize: 16,
-  },
-  commentInputRow: {
-    display: "flex",
-    gap: 8,
-    marginBottom: 10,
-  },
-  commentList: {
-    display: "grid",
-    gap: 8,
-  },
-  commentItem: {
-    padding: "10px 12px",
-    borderRadius: 14,
-    background: "rgba(255,255,255,0.04)",
-    color: "#dbe3ff",
-  },
   leaderboardList: {
     display: "grid",
     gap: 10,
@@ -1869,53 +1435,6 @@ const styles = {
     display: "flex",
     gap: 8,
     alignItems: "start",
-  },
-  profileStats: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, 1fr)",
-    gap: 10,
-    marginBottom: 14,
-  },
-  statMini: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 4,
-    padding: 12,
-    borderRadius: 14,
-    background: "rgba(255,255,255,0.04)",
-    border: "1px solid rgba(255,255,255,0.06)",
-  },
-  badgesWrap: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 16,
-  },
-  historyWrap: {
-    display: "grid",
-    gap: 10,
-  },
-  sectionTitle: {
-    margin: "0 0 6px",
-  },
-  historyItem: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 10,
-    padding: 12,
-    borderRadius: 14,
-    background: "rgba(255,255,255,0.04)",
-    border: "1px solid rgba(255,255,255,0.06)",
-  },
-  historyTitle: {
-    fontWeight: 700,
-  },
-  historySub: {
-    color: "#98a3bf",
-    fontSize: 12,
-  },
-  historyProfit: {
-    fontWeight: 800,
   },
   loadingBox: {
     padding: 16,
