@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL =
-  import.meta.env.VITE_SUPABASE_URL || "https://YOUR_PROJECT.supabase.co";
-const SUPABASE_ANON_KEY =
-  import.meta.env.VITE_SUPABASE_ANON_KEY || "YOUR_PUBLISHABLE_KEY";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -54,6 +52,14 @@ async function hashPassword(password) {
     .join("");
 }
 
+function getBadgeColor(label) {
+  if (label.includes("GOAT")) return "gold";
+  if (label.includes("ROI")) return "green";
+  if (label.includes("Sniper")) return "blue";
+  if (label.includes("Cash")) return "emerald";
+  return "default";
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState("markets");
   const [authMode, setAuthMode] = useState("login");
@@ -90,19 +96,20 @@ export default function App() {
   const [successMessage, setSuccessMessage] = useState("");
 
   const isConfigured =
+    !!SUPABASE_URL &&
+    !!SUPABASE_ANON_KEY &&
     !SUPABASE_URL.includes("YOUR_PROJECT") &&
     !SUPABASE_ANON_KEY.includes("YOUR_PUBLISHABLE_KEY");
 
-  const normalizedUser = sessionUser?.trim();
   const isAdmin =
-    unlockAdmin || AUTO_ADMIN_USERS.includes(normalizedUser || "");
+    unlockAdmin || AUTO_ADMIN_USERS.includes((sessionUser || "").trim());
 
   useEffect(() => {
     if (!isConfigured || !sessionUser) return;
     loadAll();
 
     const channel = supabase
-      .channel("bet-potes-live")
+      .channel("bet-potes-live-v2")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "markets" },
@@ -168,9 +175,7 @@ export default function App() {
       proposalsRes.error ||
       commentsRes.error;
 
-    if (firstError) {
-      setErrorMessage(firstError.message);
-    }
+    if (firstError) setErrorMessage(firstError.message);
 
     setMarkets(marketsRes.data || []);
     setOptions(optionsRes.data || []);
@@ -248,10 +253,17 @@ export default function App() {
     };
   }, [markets, wagers, sessionUser]);
 
-  const myHistory = useMemo(() => {
-    const optionMap = new Map(options.map((o) => [o.id, o]));
-    const marketMap = new Map(markets.map((m) => [m.id, m]));
+  const marketMap = useMemo(
+    () => new Map(markets.map((market) => [market.id, market])),
+    [markets]
+  );
 
+  const optionMap = useMemo(
+    () => new Map(options.map((option) => [option.id, option])),
+    [options]
+  );
+
+  const myHistory = useMemo(() => {
     return wagers
       .filter((w) => w.username === sessionUser)
       .map((wager) => {
@@ -270,13 +282,12 @@ export default function App() {
           won,
           amount,
           odds,
-          grossReturn,
           netProfit,
         };
       })
       .filter((item) => item.market && item.option)
       .sort((a, b) => b.wager.id - a.wager.id);
-  }, [wagers, options, markets, sessionUser]);
+  }, [wagers, optionMap, marketMap, sessionUser]);
 
   const myStats = useMemo(() => {
     const resolved = myHistory.filter((item) => item.market?.resolved);
@@ -295,9 +306,45 @@ export default function App() {
     };
   }, [myHistory]);
 
+  const leaderboard = useMemo(() => {
+    const names = new Set(scores.map((s) => s.username));
+    wagers.forEach((w) => names.add(w.username));
+    if (sessionUser) names.add(sessionUser);
+
+    return [...names]
+      .map((name) => {
+        const profile = scoreMap.get(name) || {
+          username: name,
+          money: STARTING_MONEY,
+          score: 0,
+          wins: 0,
+          losses: 0,
+        };
+
+        const playerWagers = wagers.filter((w) => w.username === name);
+        return {
+          name,
+          money: Number(profile.money || STARTING_MONEY),
+          score: Number(profile.score || 0),
+          wins: Number(profile.wins || 0),
+          losses: Number(profile.losses || 0),
+          betsCount: playerWagers.length,
+        };
+      })
+      .sort(
+        (a, b) =>
+          b.money - a.money ||
+          b.score - a.score ||
+          b.wins - a.wins ||
+          a.name.localeCompare(b.name)
+      );
+  }, [scores, wagers, sessionUser, scoreMap]);
+
+  const topPlayer = leaderboard[0];
+
   const badges = useMemo(() => {
     const result = [];
-
+    if (leaderboard[0]?.name === sessionUser) result.push("🐐 GOAT");
     if ((currentProfile.money || 0) >= 1500) result.push("💰 Cash machine");
     if (myStats.wins >= 5) result.push("🧠 Pro bettor");
     if (myStats.roi >= 25 && myStats.totalStaked >= 200) result.push("📈 ROI monster");
@@ -316,44 +363,14 @@ export default function App() {
       result.push("💀 All-in raté");
     }
     if (myHistory.length >= 10) result.push("🔥 Volume trader");
-
     return result;
-  }, [currentProfile, myStats, myHistory]);
+  }, [leaderboard, sessionUser, currentProfile, myStats, myHistory]);
 
-  const leaderboard = useMemo(() => {
-    const names = new Set(scores.map((s) => s.username));
-    wagers.forEach((w) => names.add(w.username));
-    if (sessionUser) names.add(sessionUser);
-
-    return [...names]
-      .map((name) => {
-        const profile = scoreMap.get(name) || {
-          username: name,
-          score: 0,
-          money: STARTING_MONEY,
-          wins: 0,
-          losses: 0,
-        };
-
-        const playerWagers = wagers.filter((w) => w.username === name);
-
-        return {
-          name,
-          money: Number(profile.money || STARTING_MONEY),
-          score: Number(profile.score || 0),
-          wins: Number(profile.wins || 0),
-          losses: Number(profile.losses || 0),
-          betsCount: playerWagers.length,
-        };
-      })
-      .sort(
-        (a, b) =>
-          b.money - a.money ||
-          b.score - a.score ||
-          b.wins - a.wins ||
-          a.name.localeCompare(b.name)
-      );
-  }, [scores, wagers, scoreMap, sessionUser]);
+  const featuredMarket = useMemo(() => {
+    const openMarkets = markets.filter((m) => !isClosedMarket(m));
+    if (openMarkets.length === 0) return markets[0] || null;
+    return [...openMarkets].sort((a, b) => getMarketVolume(b.id) - getMarketVolume(a.id))[0];
+  }, [markets, options, wagers]);
 
   const filteredMarkets = useMemo(() => {
     let data = [...markets];
@@ -378,16 +395,22 @@ export default function App() {
       return matchesStatus && matchesCategory && matchesSearch;
     });
 
-    if (marketSort === "newest") {
-      data.sort((a, b) => b.id - a.id);
-    } else if (marketSort === "oldest") {
-      data.sort((a, b) => a.id - b.id);
-    } else if (marketSort === "volume") {
+    if (marketSort === "newest") data.sort((a, b) => b.id - a.id);
+    if (marketSort === "oldest") data.sort((a, b) => a.id - b.id);
+    if (marketSort === "volume") {
       data.sort((a, b) => getMarketVolume(b.id) - getMarketVolume(a.id));
     }
 
     return data;
-  }, [markets, marketStatusFilter, marketCategoryFilter, marketSearch, marketSort, wagers, options]);
+  }, [
+    markets,
+    marketStatusFilter,
+    marketCategoryFilter,
+    marketSearch,
+    marketSort,
+    options,
+    wagers,
+  ]);
 
   async function ensureScoreProfile(username) {
     if (!username) return;
@@ -420,7 +443,6 @@ export default function App() {
     const { error: userError } = await supabase.from("users").insert({
       username: cleanUsername,
       password_hash: hashed,
-      created_at: new Date().toISOString(),
     });
 
     if (userError) {
@@ -493,11 +515,13 @@ export default function App() {
     const marketOptions = optionsByMarket[marketId] || [];
     return marketOptions.reduce((sum, option) => {
       const optionWagers = wagersByOption[option.id] || [];
-      const optionVolume = optionWagers.reduce(
-        (acc, wager) => acc + Number(wager.amount || 0),
-        0
+      return (
+        sum +
+        optionWagers.reduce(
+          (acc, wager) => acc + Number(wager.amount || 0),
+          0
+        )
       );
-      return sum + optionVolume;
     }, 0);
   }
 
@@ -584,6 +608,7 @@ export default function App() {
     setMarketForm(DEFAULT_MARKET_FORM);
     setSuccessMessage("Marché créé.");
     setIsSubmittingMarket(false);
+    setActiveTab("markets");
     await loadAll();
   }
 
@@ -660,9 +685,7 @@ export default function App() {
     const optionIds = marketOptions.map((opt) => opt.id);
     const marketWagers = wagers.filter((w) => optionIds.includes(w.option_id));
 
-    const localScoreMap = new Map(
-      scores.map((score) => [score.username, { ...score }])
-    );
+    const localScoreMap = new Map(scores.map((score) => [score.username, { ...score }]));
 
     marketWagers.forEach((wager) => {
       const option = marketOptions.find((opt) => opt.id === wager.option_id);
@@ -718,7 +741,6 @@ export default function App() {
 
   async function submitProposal(e) {
     e.preventDefault();
-
     if (!proposalDraft.trim() || !sessionUser) return;
 
     setIsSubmittingProposal(true);
@@ -821,16 +843,18 @@ export default function App() {
     }
   }
 
+  const tabsToShow = isAdmin ? TABS : TABS.filter((tab) => tab.key !== "admin");
+
   if (!isConfigured) {
     return (
       <div style={styles.page}>
         <style>{globalStyles}</style>
         <div style={styles.authWrap}>
           <div style={styles.authCard}>
-            <h1 style={styles.heroTitle}>⚙️ Configuration requise</h1>
+            <h1 style={styles.authTitle}>Configuration requise</h1>
             <p style={styles.heroText}>
               Ajoute <strong>VITE_SUPABASE_URL</strong> et{" "}
-              <strong>VITE_SUPABASE_ANON_KEY</strong> dans Vercel et en local.
+              <strong>VITE_SUPABASE_ANON_KEY</strong>.
             </p>
           </div>
         </div>
@@ -844,22 +868,22 @@ export default function App() {
         <style>{globalStyles}</style>
         <div style={styles.authWrap}>
           <div style={styles.authCard}>
-            <div style={styles.badge}>Version finale</div>
+            <div style={styles.authTag}>Version finale</div>
             <h1 style={styles.authTitle}>Bet entre potes</h1>
             <p style={styles.heroText}>
               Marchés privés entre potes, bankroll fictive, commentaires,
               badges, historique, leaderboard et admin.
             </p>
 
-            <div style={styles.authTabs}>
+            <div style={styles.authSwitch}>
               <button
-                style={authMode === "login" ? styles.activeSmallTab : styles.smallTab}
+                style={authMode === "login" ? styles.activeMiniTab : styles.miniTab}
                 onClick={() => setAuthMode("login")}
               >
                 Connexion
               </button>
               <button
-                style={authMode === "register" ? styles.activeSmallTab : styles.smallTab}
+                style={authMode === "register" ? styles.activeMiniTab : styles.miniTab}
                 onClick={() => setAuthMode("register")}
               >
                 Créer un compte
@@ -881,23 +905,20 @@ export default function App() {
                 onChange={(e) => setAuthPassword(e.target.value)}
               />
 
-              {errorMessage ? <div style={styles.errorBox}>{errorMessage}</div> : null}
+              {errorMessage ? <div style={styles.errorBanner}>{errorMessage}</div> : null}
               {successMessage ? (
-                <div style={styles.successBox}>{successMessage}</div>
+                <div style={styles.successBanner}>{successMessage}</div>
               ) : null}
 
-              {authMode === "login" ? (
-                <button style={styles.primaryButton} onClick={login}>
-                  Connexion
-                </button>
-              ) : (
-                <button style={styles.primaryButton} onClick={register}>
-                  Créer le compte
-                </button>
-              )}
+              <button
+                style={styles.primaryButton}
+                onClick={authMode === "login" ? login : register}
+              >
+                {authMode === "login" ? "Connexion" : "Créer le compte"}
+              </button>
             </div>
 
-            <div style={styles.loginFeatures}>
+            <div style={styles.authChipRow}>
               <span style={styles.chip}>1000$ de départ</span>
               <span style={styles.chip}>Commentaires</span>
               <span style={styles.chip}>Historique</span>
@@ -909,346 +930,377 @@ export default function App() {
     );
   }
 
-  const topPlayer = leaderboard[0];
-
   return (
     <div style={styles.page}>
       <style>{globalStyles}</style>
 
-      <div style={styles.topbar}>
-        <div style={styles.logoGroup}>
-          <div style={styles.logoSquare}>◆</div>
+      <header style={styles.header}>
+        <div style={styles.logoRow}>
+          <div style={styles.logoBox}>◆</div>
           <div>
-            <div style={styles.brandTitle}>Bet entre potes</div>
-            <div style={styles.brandSub}>private market • final edition</div>
+            <div style={styles.brand}>Bet entre potes</div>
+            <div style={styles.brandSub}>private market • v2 pro</div>
           </div>
         </div>
 
-        <div style={styles.topbarRight}>
-          <div style={styles.userPill}>👤 {sessionUser}</div>
-          <div style={styles.userPill}>💸 {formatMoney(currentProfile.money)}</div>
-          <div style={styles.userPill}>🏆 {Number(currentProfile.score || 0)} pts</div>
-
+        <div style={styles.headerRight}>
+          <div style={styles.statPill}>👤 {sessionUser}</div>
+          <div style={styles.statPill}>💸 {formatMoney(currentProfile.money)}</div>
+          <div style={styles.statPill}>🏆 {currentProfile.score || 0} pts</div>
           {!isAdmin ? (
-            <button style={styles.ghostButton} onClick={tryUnlockAdmin}>
+            <button style={styles.secondaryButton} onClick={tryUnlockAdmin}>
               Débloquer admin
             </button>
           ) : (
             <div style={styles.adminPill}>ADMIN</div>
           )}
-
-          <button style={styles.ghostButton} onClick={logout}>
+          <button style={styles.secondaryButton} onClick={logout}>
             Déconnexion
           </button>
         </div>
-      </div>
+      </header>
 
-      <div style={styles.heroGrid}>
-        <div style={styles.heroCardLarge}>
-          <div style={styles.heroSmall}>Marché du moment</div>
-          <h2 style={styles.heroHeadline}>
+      <section style={styles.heroPanel}>
+        <div style={styles.heroLeft}>
+          <div style={styles.heroEyebrow}>Marché du moment</div>
+          <h2 style={styles.heroTitle}>
             Parie, propose, grimpe au classement.
           </h2>
-          <p style={styles.heroText}>
-            Version finale avec onglets, auth, bankroll, ROI, historique, badges,
-            commentaires, propositions et panel admin.
+          <p style={styles.heroTextLarge}>
+            Une interface plus propre, plus premium, pensée pour le chaos entre potes.
           </p>
 
-          <div style={styles.statsGrid}>
-            <div style={styles.statCard}>
+          <div style={styles.heroStats}>
+            <div style={styles.heroStatCard}>
               <strong>{marketStats.openCount}</strong>
               <span>Marchés ouverts</span>
             </div>
-            <div style={styles.statCard}>
+            <div style={styles.heroStatCard}>
               <strong>{marketStats.activeUsers}</strong>
               <span>Joueurs actifs</span>
             </div>
-            <div style={styles.statCard}>
+            <div style={styles.heroStatCard}>
               <strong>{formatMoney(marketStats.totalVolume)}</strong>
               <span>Volume total</span>
             </div>
           </div>
         </div>
 
-        <div style={styles.heroCardSide}>
-          <div style={styles.heroSmall}>Top joueur</div>
-          <div style={styles.topPlayerName}>
-            {topPlayer ? topPlayer.name : "Personne"}
-          </div>
-          <div style={styles.topPlayerMoney}>
-            {topPlayer ? formatMoney(topPlayer.money) : "1000$"}
-          </div>
-          <div style={styles.subtleText}>
-            Le leaderboard principal est basé sur l’argent fictif.
-          </div>
+        <div style={styles.heroRight}>
+          <div style={styles.featureLabel}>Marché vedette</div>
+          {featuredMarket ? (
+            <>
+              <div style={styles.featureTitle}>{featuredMarket.title}</div>
+              <div style={styles.featureMetaRow}>
+                <span style={styles.mutedPill}>{featuredMarket.category || "Fun"}</span>
+                <span style={styles.mutedPill}>
+                  {formatMoney(getMarketVolume(featuredMarket.id))}
+                </span>
+              </div>
+              <div style={styles.featureFooter}>
+                {topPlayer ? (
+                  <>
+                    <span style={styles.topLabel}>Top joueur</span>
+                    <strong style={styles.topValue}>
+                      {topPlayer.name} · {formatMoney(topPlayer.money)}
+                    </strong>
+                  </>
+                ) : (
+                  <span style={styles.topLabel}>Pas encore de top joueur</span>
+                )}
+              </div>
+            </>
+          ) : (
+            <div style={styles.emptyMini}>Aucun marché vedette pour l’instant.</div>
+          )}
         </div>
-      </div>
+      </section>
 
-      <div style={styles.tabBar}>
-        {TABS.filter((tab) => (tab.key === "admin" ? isAdmin : true)).map((tab) => (
+      <nav style={styles.navbar}>
+        {tabsToShow.map((tab) => (
           <button
             key={tab.key}
-            style={activeTab === tab.key ? styles.activeTabButton : styles.tabButton}
+            style={activeTab === tab.key ? styles.activeNavButton : styles.navButton}
             onClick={() => setActiveTab(tab.key)}
           >
             {tab.label}
           </button>
         ))}
-      </div>
+      </nav>
 
-      {errorMessage ? <div style={styles.errorBox}>{errorMessage}</div> : null}
-      {successMessage ? <div style={styles.successBox}>{successMessage}</div> : null}
+      {errorMessage ? <div style={styles.errorBanner}>{errorMessage}</div> : null}
+      {successMessage ? <div style={styles.successBanner}>{successMessage}</div> : null}
 
       {activeTab === "markets" && (
-        <section style={styles.section}>
-          <div style={styles.sectionHeader}>
-            <div>
-              <h3 style={styles.sectionTitle}>Marchés</h3>
-              <p style={styles.sectionSubtitle}>
-                Choisis une position, mets un montant, et fais grossir ta bankroll.
-              </p>
-            </div>
-          </div>
-
-          <div style={styles.filters}>
-            <div style={styles.filterRow}>
-              <button
-                style={
-                  marketStatusFilter === "open"
-                    ? styles.activeSmallTab
-                    : styles.smallTab
-                }
-                onClick={() => setMarketStatusFilter("open")}
-              >
-                Ouverts
-              </button>
-              <button
-                style={
-                  marketStatusFilter === "resolved"
-                    ? styles.activeSmallTab
-                    : styles.smallTab
-                }
-                onClick={() => setMarketStatusFilter("resolved")}
-              >
-                Résolus
-              </button>
-              <button
-                style={
-                  marketStatusFilter === "all"
-                    ? styles.activeSmallTab
-                    : styles.smallTab
-                }
-                onClick={() => setMarketStatusFilter("all")}
-              >
-                Tous
-              </button>
-            </div>
-
-            <div style={styles.filterInputs}>
-              <select
-                style={styles.select}
-                value={marketCategoryFilter}
-                onChange={(e) => setMarketCategoryFilter(e.target.value)}
-              >
-                {categories.map((category) => (
-                  <option key={category}>{category}</option>
-                ))}
-              </select>
-
-              <select
-                style={styles.select}
-                value={marketSort}
-                onChange={(e) => setMarketSort(e.target.value)}
-              >
-                <option value="newest">Plus récents</option>
-                <option value="oldest">Plus anciens</option>
-                <option value="volume">Plus de volume</option>
-              </select>
-
-              <input
-                style={styles.searchInput}
-                placeholder="Rechercher un marché"
-                value={marketSearch}
-                onChange={(e) => setMarketSearch(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {isLoading ? <div style={styles.loadingCard}>Chargement...</div> : null}
-
-          <div style={styles.marketList}>
-            {filteredMarkets.map((market) => {
-              const marketOptions = optionsByMarket[market.id] || [];
-              const totalVolume = getMarketVolume(market.id);
-              const closed = isClosedMarket(market);
-
-              return (
-                <div key={market.id} style={styles.marketCard}>
-                  <div style={styles.marketHeader}>
-                    <div style={styles.marketMeta}>
-                      <span style={market.resolved ? styles.pillResolved : styles.pillOpen}>
-                        {market.resolved ? "Résolu" : closed ? "Fermé" : "Ouvert"}
-                      </span>
-                      <span style={styles.pillNeutral}>
-                        {(market.category || "Fun").toUpperCase()}
-                      </span>
-                      <span style={styles.pillNeutral}>
-                        Volume {formatMoney(totalVolume)}
-                      </span>
-                    </div>
-
-                    <div style={styles.marketDates}>
-                      <span>Fin : {formatDate(market.closes_at)}</span>
-                    </div>
-                  </div>
-
-                  <h4 style={styles.marketTitle}>{market.title}</h4>
-
-                  {!closed && !market.resolved ? (
-                    <div style={styles.amountRow}>
-                      <input
-                        style={styles.input}
-                        type="number"
-                        min="1"
-                        placeholder="Montant à miser"
-                        value={amountDrafts[market.id] || ""}
-                        onChange={(e) =>
-                          setAmountDrafts((current) => ({
-                            ...current,
-                            [market.id]: e.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                  ) : (
-                    <div style={styles.closedNotice}>
-                      {market.resolved
-                        ? "Marché résolu"
-                        : "Marché fermé, plus aucune mise possible"}
-                    </div>
-                  )}
-
-                  {marketOptions.length === 0 ? (
-                    <div style={styles.emptyState}>
-                      Ce marché n’a pas encore d’options.
-                    </div>
-                  ) : (
-                    <div style={styles.optionsGrid}>
-                      {marketOptions.map((option) => {
-                        const optionWagers = wagersByOption[option.id] || [];
-                        const optionVolume = optionWagers.reduce(
-                          (sum, wager) => sum + Number(wager.amount || 0),
-                          0
-                        );
-                        const share =
-                          totalVolume > 0
-                            ? Math.round((optionVolume / totalVolume) * 100)
-                            : 0;
-
-                        const pickedByMe = optionWagers.some(
-                          (wager) => wager.username === sessionUser
-                        );
-
-                        const isWinner = market.winning_option_id === option.id;
-
-                        return (
-                          <button
-                            key={option.id}
-                            style={{
-                              ...styles.optionCard,
-                              ...(pickedByMe ? styles.optionCardPicked : {}),
-                              ...(isWinner ? styles.optionCardWinner : {}),
-                            }}
-                            disabled={closed}
-                            onClick={() => placeBet(market, option)}
-                          >
-                            <div style={styles.optionTop}>
-                              <span style={styles.optionName}>{option.name}</span>
-                              <span style={styles.optionOdds}>
-                                x{Number(option.odds || 1).toFixed(1)}
-                              </span>
-                            </div>
-
-                            <div style={styles.optionBottom}>
-                              <span>{share}% du volume</span>
-                              <span>{formatMoney(optionVolume)}</span>
-                            </div>
-
-                            {pickedByMe && !market.resolved ? (
-                              <span style={styles.pickBadge}>Ton pick</span>
-                            ) : null}
-
-                            {isWinner ? (
-                              <span style={styles.winnerBadge}>Gagnant</span>
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {isAdmin && !market.resolved && (optionsByMarket[market.id] || []).length > 0 && (
-                    <div style={styles.adminResolveRow}>
-                      <span style={styles.resolveLabel}>Résoudre :</span>
-                      {(optionsByMarket[market.id] || []).map((option) => (
-                        <button
-                          key={option.id}
-                          style={styles.smallActionButton}
-                          onClick={() => resolveMarket(market, option)}
-                        >
-                          {option.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  <div style={styles.commentBlock}>
-                    <div style={styles.commentTitle}>Commentaires</div>
-                    <div style={styles.commentInputRow}>
-                      <input
-                        style={styles.input}
-                        placeholder="Lâche ton avis..."
-                        value={commentDrafts[market.id] || ""}
-                        onChange={(e) =>
-                          setCommentDrafts((current) => ({
-                            ...current,
-                            [market.id]: e.target.value,
-                          }))
-                        }
-                      />
-                      <button
-                        style={styles.smallActionButton}
-                        onClick={() => addComment(market.id)}
-                      >
-                        Envoyer
-                      </button>
-                    </div>
-
-                    <div style={styles.commentList}>
-                      {(commentsByMarket[market.id] || []).slice(0, 5).map((comment) => (
-                        <div key={comment.id} style={styles.commentItem}>
-                          <strong>{comment.username}</strong> — {comment.text}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+        <div style={styles.pageGrid}>
+          <div style={styles.mainColumn}>
+            <section style={styles.card}>
+              <div style={styles.cardHeader}>
+                <div>
+                  <h3 style={styles.cardTitle}>Marchés</h3>
+                  <p style={styles.cardSub}>
+                    Choisis une position, mets un montant, et fais grossir ta bankroll.
+                  </p>
                 </div>
-              );
-            })}
+              </div>
 
-            {!isLoading && filteredMarkets.length === 0 ? (
-              <div style={styles.emptyState}>Aucun marché ici pour le moment.</div>
-            ) : null}
+              <div style={styles.filtersBlock}>
+                <div style={styles.filterTabs}>
+                  <button
+                    style={
+                      marketStatusFilter === "open" ? styles.activeMiniTab : styles.miniTab
+                    }
+                    onClick={() => setMarketStatusFilter("open")}
+                  >
+                    Ouverts
+                  </button>
+                  <button
+                    style={
+                      marketStatusFilter === "resolved"
+                        ? styles.activeMiniTab
+                        : styles.miniTab
+                    }
+                    onClick={() => setMarketStatusFilter("resolved")}
+                  >
+                    Résolus
+                  </button>
+                  <button
+                    style={
+                      marketStatusFilter === "all" ? styles.activeMiniTab : styles.miniTab
+                    }
+                    onClick={() => setMarketStatusFilter("all")}
+                  >
+                    Tous
+                  </button>
+                </div>
+
+                <div style={styles.filterGrid}>
+                  <select
+                    style={styles.select}
+                    value={marketCategoryFilter}
+                    onChange={(e) => setMarketCategoryFilter(e.target.value)}
+                  >
+                    {categories.map((category) => (
+                      <option key={category}>{category}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    style={styles.select}
+                    value={marketSort}
+                    onChange={(e) => setMarketSort(e.target.value)}
+                  >
+                    <option value="newest">Plus récents</option>
+                    <option value="oldest">Plus anciens</option>
+                    <option value="volume">Plus de volume</option>
+                  </select>
+
+                  <input
+                    style={styles.searchInput}
+                    placeholder="Rechercher un marché"
+                    value={marketSearch}
+                    onChange={(e) => setMarketSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {isLoading ? <div style={styles.loadingCard}>Chargement...</div> : null}
+
+              <div style={styles.marketList}>
+                {filteredMarkets.map((market) => {
+                  const marketOptions = optionsByMarket[market.id] || [];
+                  const totalVolume = getMarketVolume(market.id);
+                  const closed = isClosedMarket(market);
+
+                  return (
+                    <div key={market.id} style={styles.marketCard}>
+                      <div style={styles.marketTopRow}>
+                        <div style={styles.marketPills}>
+                          <span style={market.resolved ? styles.resolvedPill : styles.openPill}>
+                            {market.resolved ? "Résolu" : closed ? "Fermé" : "Ouvert"}
+                          </span>
+                          <span style={styles.neutralPill}>
+                            {(market.category || "Fun").toUpperCase()}
+                          </span>
+                          <span style={styles.neutralPill}>
+                            Volume {formatMoney(totalVolume)}
+                          </span>
+                        </div>
+
+                        <div style={styles.marketEnd}>Fin : {formatDate(market.closes_at)}</div>
+                      </div>
+
+                      <h4 style={styles.marketName}>{market.title}</h4>
+
+                      {!closed ? (
+                        <input
+                          style={styles.input}
+                          type="number"
+                          min="1"
+                          placeholder="Montant à miser"
+                          value={amountDrafts[market.id] || ""}
+                          onChange={(e) =>
+                            setAmountDrafts((current) => ({
+                              ...current,
+                              [market.id]: e.target.value,
+                            }))
+                          }
+                        />
+                      ) : (
+                        <div style={styles.closedBox}>
+                          {market.resolved
+                            ? "Marché résolu"
+                            : "Marché fermé, les mises sont bloquées"}
+                        </div>
+                      )}
+
+                      <div style={styles.optionsGrid}>
+                        {marketOptions.map((option) => {
+                          const optionWagers = wagersByOption[option.id] || [];
+                          const optionVolume = optionWagers.reduce(
+                            (sum, wager) => sum + Number(wager.amount || 0),
+                            0
+                          );
+                          const percentage =
+                            totalVolume > 0 ? Math.round((optionVolume / totalVolume) * 100) : 0;
+
+                          const pickedByMe = optionWagers.some(
+                            (wager) => wager.username === sessionUser
+                          );
+
+                          const isWinner = market.winning_option_id === option.id;
+
+                          return (
+                            <button
+                              key={option.id}
+                              style={{
+                                ...styles.optionCard,
+                                ...(pickedByMe ? styles.optionCardPicked : {}),
+                                ...(isWinner ? styles.optionCardWinner : {}),
+                              }}
+                              disabled={closed}
+                              onClick={() => placeBet(market, option)}
+                            >
+                              <div style={styles.optionCardTop}>
+                                <span style={styles.optionLabel}>{option.name}</span>
+                                <span style={styles.optionPrice}>
+                                  x{Number(option.odds || 1).toFixed(1)}
+                                </span>
+                              </div>
+
+                              <div style={styles.optionCardBottom}>
+                                <span>{percentage}% du volume</span>
+                                <span>{formatMoney(optionVolume)}</span>
+                              </div>
+
+                              {pickedByMe && !market.resolved ? (
+                                <span style={styles.smallBadgeBlue}>Ton pick</span>
+                              ) : null}
+
+                              {isWinner ? (
+                                <span style={styles.smallBadgeGreen}>Gagnant</span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {isAdmin && !market.resolved && marketOptions.length > 0 ? (
+                        <div style={styles.resolveRow}>
+                          <span style={styles.resolveText}>Résoudre :</span>
+                          {marketOptions.map((option) => (
+                            <button
+                              key={option.id}
+                              style={styles.smallButton}
+                              onClick={() => resolveMarket(market, option)}
+                            >
+                              {option.name}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      <div style={styles.commentSection}>
+                        <div style={styles.commentHeader}>Commentaires</div>
+                        <div style={styles.commentInputRow}>
+                          <input
+                            style={styles.input}
+                            placeholder="Lâche ton avis"
+                            value={commentDrafts[market.id] || ""}
+                            onChange={(e) =>
+                              setCommentDrafts((current) => ({
+                                ...current,
+                                [market.id]: e.target.value,
+                              }))
+                            }
+                          />
+                          <button
+                            style={styles.smallButton}
+                            onClick={() => addComment(market.id)}
+                          >
+                            Envoyer
+                          </button>
+                        </div>
+
+                        <div style={styles.commentList}>
+                          {(commentsByMarket[market.id] || []).slice(0, 6).map((comment) => (
+                            <div key={comment.id} style={styles.commentItem}>
+                              <strong>{comment.username}</strong> — {comment.text}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {!isLoading && filteredMarkets.length === 0 ? (
+                  <div style={styles.emptyBlock}>Aucun marché pour l’instant.</div>
+                ) : null}
+              </div>
+            </section>
           </div>
-        </section>
+
+          <div style={styles.sideColumn}>
+            <section style={styles.card}>
+              <h3 style={styles.cardTitle}>Résumé rapide</h3>
+              <div style={styles.quickStats}>
+                <div style={styles.quickStat}>
+                  <strong>{formatMoney(currentProfile.money)}</strong>
+                  <span>Wallet</span>
+                </div>
+                <div style={styles.quickStat}>
+                  <strong>{currentProfile.score || 0}</strong>
+                  <span>Score</span>
+                </div>
+                <div style={styles.quickStat}>
+                  <strong>{myStats.roi}%</strong>
+                  <span>ROI</span>
+                </div>
+              </div>
+            </section>
+
+            <section style={styles.card}>
+              <h3 style={styles.cardTitle}>Top 5</h3>
+              <div style={styles.topMiniList}>
+                {leaderboard.slice(0, 5).map((player, index) => (
+                  <div key={player.name} style={styles.topMiniItem}>
+                    <span>#{index + 1} {player.name}</span>
+                    <strong>{formatMoney(player.money)}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        </div>
       )}
 
       {activeTab === "leaderboard" && (
-        <section style={styles.section}>
-          <div style={styles.sectionHeader}>
+        <section style={styles.card}>
+          <div style={styles.cardHeader}>
             <div>
-              <h3 style={styles.sectionTitle}>Leaderboard</h3>
-              <p style={styles.sectionSubtitle}>Classement principal par bankroll.</p>
+              <h3 style={styles.cardTitle}>Leaderboard</h3>
+              <p style={styles.cardSub}>Classé par bankroll puis score.</p>
             </div>
           </div>
 
@@ -1256,18 +1308,18 @@ export default function App() {
             {leaderboard.map((player, index) => (
               <div key={player.name} style={styles.leaderboardItem}>
                 <div style={styles.leaderLeft}>
-                  <div style={styles.rankBubble}>{index + 1}</div>
+                  <div style={styles.rankCircle}>{index + 1}</div>
                   <div>
                     <div style={styles.leaderName}>{player.name}</div>
-                    <div style={styles.leaderSub}>
-                      {player.betsCount} pari(s) • {player.wins} win(s)
+                    <div style={styles.leaderMeta}>
+                      {player.betsCount} pari(s) • {player.wins} win(s) • {player.losses} loss(es)
                     </div>
                   </div>
                 </div>
 
                 <div style={styles.leaderRight}>
                   <div style={styles.leaderMoney}>{formatMoney(player.money)}</div>
-                  <div style={styles.leaderSub}>{player.score} pts</div>
+                  <div style={styles.leaderMeta}>{player.score} pts</div>
                 </div>
               </div>
             ))}
@@ -1276,71 +1328,82 @@ export default function App() {
       )}
 
       {activeTab === "profile" && (
-        <section style={styles.section}>
-          <div style={styles.sectionHeader}>
-            <div>
-              <h3 style={styles.sectionTitle}>Mon profil</h3>
-              <p style={styles.sectionSubtitle}>
-                Argent, ROI, badges et historique détaillé.
-              </p>
+        <div style={styles.profileGrid}>
+          <section style={styles.card}>
+            <div style={styles.cardHeader}>
+              <div>
+                <h3 style={styles.cardTitle}>Mon profil</h3>
+                <p style={styles.cardSub}>Stats, badges et historique.</p>
+              </div>
             </div>
-          </div>
 
-          <div style={styles.profileTopGrid}>
-            <div style={styles.profileStatCard}>
-              <strong>{formatMoney(currentProfile.money)}</strong>
-              <span>Argent</span>
+            <div style={styles.profileStats}>
+              <div style={styles.profileStat}>
+                <strong>{formatMoney(currentProfile.money)}</strong>
+                <span>Argent</span>
+              </div>
+              <div style={styles.profileStat}>
+                <strong>{currentProfile.score || 0}</strong>
+                <span>Score</span>
+              </div>
+              <div style={styles.profileStat}>
+                <strong>{myStats.wins}</strong>
+                <span>Victoires</span>
+              </div>
+              <div style={styles.profileStat}>
+                <strong>{myStats.roi}%</strong>
+                <span>ROI</span>
+              </div>
             </div>
-            <div style={styles.profileStatCard}>
-              <strong>{currentProfile.score || 0}</strong>
-              <span>Score</span>
-            </div>
-            <div style={styles.profileStatCard}>
-              <strong>{myStats.roi}%</strong>
-              <span>ROI</span>
-            </div>
-            <div style={styles.profileStatCard}>
-              <strong>{myStats.wins}</strong>
-              <span>Victoires</span>
-            </div>
-          </div>
 
-          <div style={styles.sectionCard}>
-            <h4 style={styles.cardTitle}>Badges</h4>
+            <h4 style={styles.subTitle}>Badges</h4>
             <div style={styles.badgesWrap}>
               {badges.length > 0 ? (
                 badges.map((badge) => (
-                  <span key={badge} style={styles.chip}>
+                  <span
+                    key={badge}
+                    style={{
+                      ...styles.badgeChip,
+                      ...badgeStyles[getBadgeColor(badge)],
+                    }}
+                  >
                     {badge}
                   </span>
                 ))
               ) : (
-                <div style={styles.emptyState}>Pas encore de badge.</div>
+                <div style={styles.emptyBlock}>Pas encore de badge.</div>
               )}
             </div>
-          </div>
+          </section>
 
-          <div style={styles.sectionCard}>
-            <h4 style={styles.cardTitle}>Historique</h4>
+          <section style={styles.card}>
+            <div style={styles.cardHeader}>
+              <div>
+                <h3 style={styles.cardTitle}>Historique</h3>
+                <p style={styles.cardSub}>Tes derniers paris.</p>
+              </div>
+            </div>
+
             <div style={styles.historyList}>
               {myHistory.length > 0 ? (
                 myHistory.map((entry) => (
                   <div key={entry.wager.id} style={styles.historyItem}>
                     <div>
                       <div style={styles.historyTitle}>{entry.market.title}</div>
-                      <div style={styles.historySub}>
+                      <div style={styles.historyMeta}>
                         {entry.option.name} • mise {formatMoney(entry.amount)} • x
                         {Number(entry.odds).toFixed(1)}
                       </div>
                     </div>
+
                     <div
                       style={{
                         ...styles.historyProfit,
                         color: entry.market.resolved
                           ? entry.won
-                            ? "#7dffbb"
-                            : "#ff9d9d"
-                          : "#cfd7f6",
+                            ? "#6effb4"
+                            : "#ff9e9e"
+                          : "#d5defa",
                       }}
                     >
                       {entry.market.resolved
@@ -1352,26 +1415,24 @@ export default function App() {
                   </div>
                 ))
               ) : (
-                <div style={styles.emptyState}>Aucun pari pour l’instant.</div>
+                <div style={styles.emptyBlock}>Aucun pari pour le moment.</div>
               )}
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
       )}
 
       {activeTab === "proposals" && (
-        <section style={styles.section}>
-          <div style={styles.sectionHeader}>
-            <div>
-              <h3 style={styles.sectionTitle}>Proposer un pari</h3>
-              <p style={styles.sectionSubtitle}>
-                Envoie tes idées, l’admin peut les transformer en marché.
-              </p>
+        <div style={styles.profileGrid}>
+          <section style={styles.card}>
+            <div style={styles.cardHeader}>
+              <div>
+                <h3 style={styles.cardTitle}>Proposer un pari</h3>
+                <p style={styles.cardSub}>Envoie tes idées à l’admin.</p>
+              </div>
             </div>
-          </div>
 
-          <div style={styles.sectionCard}>
-            <form onSubmit={submitProposal} style={styles.proposalForm}>
+            <form onSubmit={submitProposal} style={styles.formStack}>
               <textarea
                 style={styles.textarea}
                 placeholder="Ex: Qui sera en retard demain matin ?"
@@ -1386,63 +1447,66 @@ export default function App() {
                 {isSubmittingProposal ? "Envoi..." : "Envoyer l’idée"}
               </button>
             </form>
-          </div>
+          </section>
 
-          <div style={styles.proposalsList}>
-            {proposals.map((proposal) => (
-              <div key={proposal.id} style={styles.proposalCard}>
-                <div>
-                  <div style={styles.proposalText}>{proposal.text}</div>
-                  <div style={styles.proposalMeta}>
-                    par {proposal.username} • {formatDate(proposal.created_at)}
-                  </div>
-                </div>
-
-                {isAdmin ? (
-                  <div style={styles.proposalActions}>
-                    <button
-                      style={styles.smallActionButton}
-                      onClick={() => convertProposalToMarket(proposal)}
-                    >
-                      Utiliser
-                    </button>
-                    <button
-                      style={styles.smallDangerButton}
-                      onClick={() => deleteProposal(proposal.id)}
-                    >
-                      Suppr.
-                    </button>
-                  </div>
-                ) : null}
+          <section style={styles.card}>
+            <div style={styles.cardHeader}>
+              <div>
+                <h3 style={styles.cardTitle}>Dernières propositions</h3>
               </div>
-            ))}
+            </div>
 
-            {proposals.length === 0 ? (
-              <div style={styles.emptyState}>Aucune proposition pour l’instant.</div>
-            ) : null}
-          </div>
-        </section>
+            <div style={styles.proposalsList}>
+              {proposals.length > 0 ? (
+                proposals.map((proposal) => (
+                  <div key={proposal.id} style={styles.proposalItem}>
+                    <div>
+                      <div style={styles.proposalTitle}>{proposal.text}</div>
+                      <div style={styles.proposalMeta}>
+                        par {proposal.username} • {formatDate(proposal.created_at)}
+                      </div>
+                    </div>
+
+                    {isAdmin ? (
+                      <div style={styles.proposalActions}>
+                        <button
+                          style={styles.smallButton}
+                          onClick={() => convertProposalToMarket(proposal)}
+                        >
+                          Utiliser
+                        </button>
+                        <button
+                          style={styles.smallDangerButton}
+                          onClick={() => deleteProposal(proposal.id)}
+                        >
+                          Suppr.
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ))
+              ) : (
+                <div style={styles.emptyBlock}>Aucune proposition.</div>
+              )}
+            </div>
+          </section>
+        </div>
       )}
 
       {activeTab === "admin" && isAdmin && (
-        <section style={styles.section}>
-          <div style={styles.sectionHeader}>
-            <div>
-              <h3 style={styles.sectionTitle}>Admin</h3>
-              <p style={styles.sectionSubtitle}>
-                Créer, fermer, résoudre, reset saison.
-              </p>
+        <div style={styles.profileGrid}>
+          <section style={styles.card}>
+            <div style={styles.cardHeader}>
+              <div>
+                <h3 style={styles.cardTitle}>Créer un marché</h3>
+                <p style={styles.cardSub}>Panel admin premium.</p>
+              </div>
+              <button style={styles.smallDangerButton} onClick={resetSeason}>
+                Reset saison
+              </button>
             </div>
 
-            <button style={styles.smallDangerButton} onClick={resetSeason}>
-              Reset saison
-            </button>
-          </div>
-
-          <div style={styles.sectionCard}>
-            <h4 style={styles.cardTitle}>Créer un marché</h4>
-
-            <form onSubmit={createMarket} style={styles.adminForm}>
+            <form onSubmit={createMarket} style={styles.formStack}>
               <input
                 style={styles.input}
                 placeholder="Titre du marché"
@@ -1455,7 +1519,7 @@ export default function App() {
                 }
               />
 
-              <div style={styles.adminGrid}>
+              <div style={styles.adminRow}>
                 <input
                   style={styles.input}
                   placeholder="Catégorie"
@@ -1467,7 +1531,6 @@ export default function App() {
                     }))
                   }
                 />
-
                 <input
                   style={styles.input}
                   type="datetime-local"
@@ -1482,7 +1545,7 @@ export default function App() {
               </div>
 
               {marketForm.options.map((option, index) => (
-                <div key={index} style={styles.optionEditRow}>
+                <div key={index} style={styles.optionEditorRow}>
                   <input
                     style={styles.input}
                     placeholder={`Option ${index + 1}`}
@@ -1491,19 +1554,17 @@ export default function App() {
                       updateMarketOption(index, "name", e.target.value)
                     }
                   />
-
                   <input
                     style={styles.input}
                     type="number"
-                    step="0.1"
                     min="1"
+                    step="0.1"
                     placeholder="Cote"
                     value={option.odds}
                     onChange={(e) =>
                       updateMarketOption(index, "odds", e.target.value)
                     }
                   />
-
                   {marketForm.options.length > 2 ? (
                     <button
                       type="button"
@@ -1519,12 +1580,11 @@ export default function App() {
               <div style={styles.adminActions}>
                 <button
                   type="button"
-                  style={styles.ghostButton}
+                  style={styles.secondaryButton}
                   onClick={addMarketOptionField}
                 >
                   + Ajouter une option
                 </button>
-
                 <button
                   type="submit"
                   style={styles.primaryButton}
@@ -1534,8 +1594,23 @@ export default function App() {
                 </button>
               </div>
             </form>
-          </div>
-        </section>
+          </section>
+
+          <section style={styles.card}>
+            <div style={styles.cardHeader}>
+              <div>
+                <h3 style={styles.cardTitle}>Raccourcis admin</h3>
+              </div>
+            </div>
+
+            <div style={styles.quickAdminList}>
+              <div style={styles.quickAdminItem}>Créer rapidement un Oui / Non</div>
+              <div style={styles.quickAdminItem}>Résoudre les marchés ouverts</div>
+              <div style={styles.quickAdminItem}>Reset saison en un clic</div>
+              <div style={styles.quickAdminItem}>Transformer une proposition en marché</div>
+            </div>
+          </section>
+        </div>
       )}
     </div>
   );
@@ -1546,11 +1621,11 @@ const globalStyles = `
   body {
     margin: 0;
     font-family: Inter, Arial, sans-serif;
-    color: #f3f6ff;
+    color: #f4f7ff;
     background:
-      radial-gradient(circle at top left, rgba(57, 93, 255, 0.20), transparent 30%),
-      radial-gradient(circle at bottom right, rgba(0, 255, 163, 0.12), transparent 25%),
-      linear-gradient(180deg, #07111f 0%, #050a14 100%);
+      radial-gradient(circle at top left, rgba(68, 96, 255, 0.16), transparent 28%),
+      radial-gradient(circle at bottom right, rgba(0, 255, 174, 0.10), transparent 22%),
+      linear-gradient(180deg, #07111f 0%, #040914 100%);
     min-height: 100vh;
   }
   button, input, textarea, select {
@@ -1558,12 +1633,35 @@ const globalStyles = `
   }
 `;
 
+const badgeStyles = {
+  default: {
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.08)",
+  },
+  gold: {
+    background: "rgba(255,200,80,0.14)",
+    border: "1px solid rgba(255,200,80,0.22)",
+  },
+  green: {
+    background: "rgba(100,255,180,0.14)",
+    border: "1px solid rgba(100,255,180,0.22)",
+  },
+  blue: {
+    background: "rgba(100,140,255,0.14)",
+    border: "1px solid rgba(100,140,255,0.22)",
+  },
+  emerald: {
+    background: "rgba(0,255,180,0.14)",
+    border: "1px solid rgba(0,255,180,0.22)",
+  },
+};
+
 const styles = {
   page: {
     minHeight: "100vh",
-    padding: "24px",
     maxWidth: 1400,
     margin: "0 auto",
+    padding: 24,
   },
   authWrap: {
     minHeight: "100vh",
@@ -1572,42 +1670,42 @@ const styles = {
   },
   authCard: {
     width: "min(760px, 100%)",
-    background: "rgba(8, 16, 32, 0.88)",
+    background: "rgba(8, 16, 32, 0.90)",
     border: "1px solid rgba(255,255,255,0.08)",
     borderRadius: 28,
     padding: 32,
-    boxShadow: "0 20px 80px rgba(0,0,0,0.35)",
+    boxShadow: "0 22px 80px rgba(0,0,0,0.35)",
     backdropFilter: "blur(14px)",
   },
-  badge: {
+  authTag: {
     display: "inline-flex",
     padding: "8px 14px",
     borderRadius: 999,
-    border: "1px solid rgba(117, 145, 255, 0.35)",
-    background: "rgba(93, 120, 255, 0.14)",
-    color: "#cfd8ff",
+    border: "1px solid rgba(117,145,255,0.35)",
+    background: "rgba(93,120,255,0.14)",
+    color: "#d5deff",
     marginBottom: 18,
   },
   authTitle: {
     margin: "0 0 12px",
-    fontSize: "clamp(38px, 6vw, 74px)",
-    lineHeight: 1,
+    fontSize: "clamp(40px, 6vw, 76px)",
     fontWeight: 900,
     letterSpacing: "-0.05em",
-  },
-  heroTitle: {
-    margin: "0 0 16px",
-    fontSize: "clamp(34px, 6vw, 56px)",
     lineHeight: 1,
-    fontWeight: 900,
   },
   heroText: {
-    color: "#aab6d8",
-    fontSize: 18,
+    color: "#aeb9d9",
     lineHeight: 1.6,
+    fontSize: 18,
     marginBottom: 18,
   },
-  authTabs: {
+  heroTextLarge: {
+    color: "#b0bbda",
+    lineHeight: 1.6,
+    fontSize: 18,
+    margin: "0 0 18px",
+  },
+  authSwitch: {
     display: "flex",
     gap: 10,
     marginBottom: 16,
@@ -1618,44 +1716,56 @@ const styles = {
     gap: 12,
     marginBottom: 18,
   },
-  topbar: {
+  authChipRow: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  chip: {
+    padding: "8px 12px",
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    color: "#d9e2ff",
+  },
+  header: {
     display: "flex",
     justifyContent: "space-between",
+    gap: 14,
     alignItems: "center",
-    gap: 16,
     flexWrap: "wrap",
-    marginBottom: 22,
+    marginBottom: 18,
   },
-  logoGroup: {
+  logoRow: {
     display: "flex",
     alignItems: "center",
     gap: 14,
   },
-  logoSquare: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
+  logoBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     display: "grid",
     placeItems: "center",
-    background: "linear-gradient(135deg, #7d95ff 0%, #4b6fff 100%)",
+    background: "linear-gradient(135deg, #7c95ff 0%, #4c6fff 100%)",
     fontWeight: 900,
   },
-  brandTitle: {
+  brand: {
     fontSize: 22,
     fontWeight: 800,
     letterSpacing: "-0.03em",
   },
   brandSub: {
-    color: "#96a4cc",
+    color: "#97a5cd",
     fontSize: 13,
   },
-  topbarRight: {
+  headerRight: {
     display: "flex",
     gap: 10,
-    alignItems: "center",
     flexWrap: "wrap",
+    alignItems: "center",
   },
-  userPill: {
+  statPill: {
     padding: "10px 14px",
     borderRadius: 999,
     background: "rgba(255,255,255,0.06)",
@@ -1664,53 +1774,52 @@ const styles = {
   adminPill: {
     padding: "10px 14px",
     borderRadius: 999,
-    background: "rgba(255, 93, 93, 0.16)",
-    border: "1px solid rgba(255, 93, 93, 0.25)",
-    color: "#ffc0c0",
+    background: "rgba(255,96,96,0.14)",
+    border: "1px solid rgba(255,96,96,0.22)",
+    color: "#ffd6d6",
     fontWeight: 700,
   },
-  heroGrid: {
+  heroPanel: {
     display: "grid",
-    gridTemplateColumns: "2fr 1fr",
+    gridTemplateColumns: "1.8fr 1fr",
     gap: 18,
     marginBottom: 18,
   },
-  heroCardLarge: {
+  heroLeft: {
     padding: 28,
     borderRadius: 28,
     background:
-      "linear-gradient(135deg, rgba(15,25,54,0.95) 0%, rgba(9,14,28,0.95) 100%)",
+      "linear-gradient(135deg, rgba(14,24,52,0.96) 0%, rgba(8,13,26,0.96) 100%)",
     border: "1px solid rgba(255,255,255,0.08)",
-    boxShadow: "0 16px 40px rgba(0,0,0,0.25)",
   },
-  heroCardSide: {
+  heroRight: {
     padding: 24,
     borderRadius: 28,
     background:
-      "linear-gradient(135deg, rgba(12,48,36,0.92) 0%, rgba(8,15,28,0.95) 100%)",
-    border: "1px solid rgba(74, 255, 176, 0.18)",
+      "linear-gradient(135deg, rgba(11,44,34,0.95) 0%, rgba(9,14,26,0.95) 100%)",
+    border: "1px solid rgba(103,255,185,0.16)",
   },
-  heroSmall: {
+  heroEyebrow: {
     marginBottom: 10,
     fontSize: 13,
+    color: "#8ca2ff",
     textTransform: "uppercase",
     letterSpacing: "0.14em",
-    color: "#8aa1ff",
   },
-  heroHeadline: {
+  heroTitle: {
     margin: "0 0 10px",
-    fontSize: "clamp(28px, 4vw, 56px)",
+    fontSize: "clamp(30px, 4vw, 54px)",
     lineHeight: 1,
     fontWeight: 900,
     letterSpacing: "-0.05em",
   },
-  statsGrid: {
+  heroStats: {
     display: "grid",
     gridTemplateColumns: "repeat(3, 1fr)",
     gap: 12,
-    marginTop: 20,
+    marginTop: 18,
   },
-  statCard: {
+  heroStatCard: {
     display: "flex",
     flexDirection: "column",
     gap: 6,
@@ -1719,94 +1828,175 @@ const styles = {
     background: "rgba(255,255,255,0.05)",
     border: "1px solid rgba(255,255,255,0.06)",
   },
-  topPlayerName: {
+  featureLabel: {
+    fontSize: 13,
+    color: "#8bf0be",
+    textTransform: "uppercase",
+    letterSpacing: "0.14em",
+    marginBottom: 10,
+  },
+  featureTitle: {
     fontSize: 30,
-    fontWeight: 800,
+    fontWeight: 900,
+    lineHeight: 1.05,
+    marginBottom: 12,
+  },
+  featureMetaRow: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    marginBottom: 20,
+  },
+  mutedPill: {
+    padding: "8px 10px",
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    color: "#dbe4ff",
+    fontSize: 13,
+  },
+  featureFooter: {
+    marginTop: 26,
+  },
+  topLabel: {
+    color: "#9eb0d7",
+    display: "block",
     marginBottom: 6,
   },
-  topPlayerMoney: {
-    color: "#6effb2",
-    fontSize: 22,
-    fontWeight: 800,
-    marginBottom: 8,
+  topValue: {
+    color: "#79ffb7",
   },
-  subtleText: {
-    color: "#9fb0d5",
-    lineHeight: 1.6,
+  emptyMini: {
+    color: "#a4b4db",
   },
-  tabBar: {
+  navbar: {
     display: "flex",
     gap: 10,
     flexWrap: "wrap",
     marginBottom: 18,
   },
-  tabButton: {
+  navButton: {
     borderRadius: 999,
     padding: "12px 16px",
     border: "1px solid rgba(255,255,255,0.08)",
     background: "rgba(255,255,255,0.04)",
-    color: "#cdd6f3",
+    color: "#d8e1ff",
     cursor: "pointer",
   },
-  activeTabButton: {
+  activeNavButton: {
     borderRadius: 999,
     padding: "12px 16px",
-    border: "1px solid rgba(97, 123, 255, 0.35)",
-    background: "rgba(97,123,255,0.18)",
+    border: "1px solid rgba(95,122,255,0.35)",
+    background: "rgba(95,122,255,0.18)",
     color: "#ffffff",
     cursor: "pointer",
   },
-  smallTab: {
+  miniTab: {
     borderRadius: 999,
     padding: "10px 14px",
     border: "1px solid rgba(255,255,255,0.08)",
     background: "rgba(255,255,255,0.04)",
-    color: "#cdd6f3",
+    color: "#d8e1ff",
     cursor: "pointer",
   },
-  activeSmallTab: {
+  activeMiniTab: {
     borderRadius: 999,
     padding: "10px 14px",
-    border: "1px solid rgba(97, 123, 255, 0.35)",
-    background: "rgba(97,123,255,0.18)",
+    border: "1px solid rgba(95,122,255,0.35)",
+    background: "rgba(95,122,255,0.18)",
     color: "#ffffff",
     cursor: "pointer",
   },
-  section: {
+  primaryButton: {
+    border: "none",
+    borderRadius: 16,
+    padding: "14px 18px",
+    background: "linear-gradient(135deg, #7d92ff 0%, #4d6fff 100%)",
+    color: "#fff",
+    fontWeight: 800,
+    cursor: "pointer",
+    boxShadow: "0 14px 28px rgba(77,111,255,0.25)",
+  },
+  secondaryButton: {
+    borderRadius: 16,
+    padding: "12px 16px",
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.04)",
+    color: "#fff",
+    cursor: "pointer",
+  },
+  smallButton: {
+    borderRadius: 12,
+    padding: "10px 12px",
+    border: "1px solid rgba(95,122,255,0.28)",
+    background: "rgba(95,122,255,0.16)",
+    color: "#eaf0ff",
+    cursor: "pointer",
+    fontWeight: 700,
+  },
+  smallDangerButton: {
+    borderRadius: 12,
+    padding: "10px 12px",
+    border: "1px solid rgba(255,96,96,0.24)",
+    background: "rgba(255,96,96,0.14)",
+    color: "#ffd7d7",
+    cursor: "pointer",
+    fontWeight: 700,
+  },
+  pageGrid: {
     display: "grid",
-    gap: 16,
+    gridTemplateColumns: "1.7fr 0.8fr",
+    gap: 18,
   },
-  sectionHeader: {
+  mainColumn: {
+    display: "grid",
+    gap: 18,
+  },
+  sideColumn: {
+    display: "grid",
+    gap: 18,
+  },
+  profileGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 18,
+  },
+  card: {
+    padding: 20,
+    borderRadius: 24,
+    background: "rgba(9, 14, 28, 0.86)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    boxShadow: "0 14px 40px rgba(0,0,0,0.20)",
+  },
+  cardHeader: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
     flexWrap: "wrap",
+    marginBottom: 14,
   },
-  sectionTitle: {
+  cardTitle: {
     margin: 0,
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 800,
-    letterSpacing: "-0.04em",
+    letterSpacing: "-0.03em",
   },
-  sectionSubtitle: {
+  cardSub: {
     margin: "6px 0 0",
-    color: "#9fb0d5",
+    color: "#9fb0d7",
   },
-  filters: {
+  filtersBlock: {
     display: "grid",
     gap: 12,
-    background: "rgba(9, 14, 28, 0.8)",
-    border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: 22,
-    padding: 18,
+    marginBottom: 16,
   },
-  filterRow: {
+  filterTabs: {
     display: "flex",
     gap: 8,
     flexWrap: "wrap",
   },
-  filterInputs: {
+  filterGrid: {
     display: "grid",
     gridTemplateColumns: "220px 220px 1fr",
     gap: 10,
@@ -1817,7 +2007,25 @@ const styles = {
     padding: "14px 16px",
     border: "1px solid rgba(255,255,255,0.10)",
     background: "rgba(255,255,255,0.06)",
-    color: "#ffffff",
+    color: "#fff",
+    outline: "none",
+  },
+  select: {
+    width: "100%",
+    borderRadius: 16,
+    padding: "14px 16px",
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#fff",
+    outline: "none",
+  },
+  searchInput: {
+    width: "100%",
+    borderRadius: 16,
+    padding: "14px 16px",
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#fff",
     outline: "none",
   },
   textarea: {
@@ -1827,63 +2035,9 @@ const styles = {
     padding: "14px 16px",
     border: "1px solid rgba(255,255,255,0.10)",
     background: "rgba(255,255,255,0.06)",
-    color: "#ffffff",
+    color: "#fff",
     outline: "none",
     resize: "vertical",
-  },
-  select: {
-    width: "100%",
-    borderRadius: 16,
-    padding: "14px 16px",
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#ffffff",
-    outline: "none",
-  },
-  searchInput: {
-    width: "100%",
-    borderRadius: 16,
-    padding: "14px 16px",
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#ffffff",
-    outline: "none",
-  },
-  primaryButton: {
-    border: "none",
-    borderRadius: 16,
-    padding: "14px 18px",
-    background: "linear-gradient(135deg, #7f94ff 0%, #4d6eff 100%)",
-    color: "#fff",
-    fontWeight: 800,
-    cursor: "pointer",
-    boxShadow: "0 14px 28px rgba(77,110,255,0.25)",
-  },
-  ghostButton: {
-    borderRadius: 16,
-    padding: "12px 16px",
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.04)",
-    color: "#fff",
-    cursor: "pointer",
-  },
-  smallActionButton: {
-    borderRadius: 12,
-    padding: "10px 12px",
-    border: "1px solid rgba(89, 116, 255, 0.24)",
-    background: "rgba(89,116,255,0.14)",
-    color: "#e7ebff",
-    cursor: "pointer",
-    fontWeight: 700,
-  },
-  smallDangerButton: {
-    borderRadius: 12,
-    padding: "10px 12px",
-    border: "1px solid rgba(255, 96, 96, 0.24)",
-    background: "rgba(255,96,96,0.14)",
-    color: "#ffd6d6",
-    cursor: "pointer",
-    fontWeight: 700,
   },
   marketList: {
     display: "grid",
@@ -1891,74 +2045,73 @@ const styles = {
   },
   marketCard: {
     padding: 18,
-    borderRadius: 24,
+    borderRadius: 22,
     background:
-      "linear-gradient(180deg, rgba(10,16,31,0.95) 0%, rgba(6,10,20,0.95) 100%)",
-    border: "1px solid rgba(255,255,255,0.08)",
+      "linear-gradient(180deg, rgba(10,16,31,0.96) 0%, rgba(6,10,20,0.96) 100%)",
+    border: "1px solid rgba(255,255,255,0.07)",
   },
-  marketHeader: {
+  marketTopRow: {
     display: "flex",
     justifyContent: "space-between",
     gap: 10,
-    alignItems: "start",
-    marginBottom: 12,
     flexWrap: "wrap",
+    alignItems: "center",
+    marginBottom: 10,
   },
-  marketMeta: {
+  marketPills: {
     display: "flex",
     gap: 8,
     flexWrap: "wrap",
   },
-  marketDates: {
-    color: "#98abd3",
-    fontSize: 13,
-  },
-  pillOpen: {
+  openPill: {
     padding: "6px 10px",
     borderRadius: 999,
-    background: "rgba(54, 221, 143, 0.15)",
-    color: "#9af0c6",
-    border: "1px solid rgba(54,221,143,0.22)",
-    fontWeight: 700,
+    background: "rgba(68,227,159,0.14)",
+    color: "#9af0c8",
+    border: "1px solid rgba(68,227,159,0.22)",
     fontSize: 12,
+    fontWeight: 700,
   },
-  pillResolved: {
+  resolvedPill: {
     padding: "6px 10px",
     borderRadius: 999,
-    background: "rgba(255, 175, 76, 0.15)",
-    color: "#ffd8a6",
-    border: "1px solid rgba(255,175,76,0.22)",
-    fontWeight: 700,
+    background: "rgba(255,178,76,0.14)",
+    color: "#ffd7a8",
+    border: "1px solid rgba(255,178,76,0.22)",
     fontSize: 12,
+    fontWeight: 700,
   },
-  pillNeutral: {
+  neutralPill: {
     padding: "6px 10px",
     borderRadius: 999,
     background: "rgba(255,255,255,0.05)",
-    color: "#c9d2ef",
+    color: "#d0d8f0",
     border: "1px solid rgba(255,255,255,0.06)",
     fontSize: 12,
   },
-  marketTitle: {
+  marketEnd: {
+    color: "#9dafd8",
+    fontSize: 13,
+  },
+  marketName: {
     margin: "0 0 14px",
     fontSize: 28,
     fontWeight: 900,
+    textAlign: "center",
     letterSpacing: "-0.04em",
   },
-  amountRow: {
-    marginBottom: 12,
-  },
-  closedNotice: {
+  closedBox: {
     marginBottom: 12,
     padding: 12,
     borderRadius: 14,
     background: "rgba(255,255,255,0.05)",
-    color: "#cbd5f5",
+    color: "#d3dcfb",
   },
   optionsGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
     gap: 12,
+    marginTop: 14,
   },
   optionCard: {
     position: "relative",
@@ -1971,70 +2124,73 @@ const styles = {
     textAlign: "left",
   },
   optionCardPicked: {
-    border: "1px solid rgba(88,116,255,0.45)",
-    background: "rgba(88,116,255,0.14)",
+    border: "1px solid rgba(95,122,255,0.45)",
+    background: "rgba(95,122,255,0.14)",
   },
   optionCardWinner: {
-    border: "1px solid rgba(54,221,143,0.35)",
-    background: "rgba(54,221,143,0.12)",
+    border: "1px solid rgba(68,227,159,0.36)",
+    background: "rgba(68,227,159,0.12)",
   },
-  optionTop: {
+  optionCardTop: {
     display: "flex",
     justifyContent: "space-between",
     gap: 8,
-    marginBottom: 16,
+    marginBottom: 18,
   },
-  optionName: {
+  optionLabel: {
     fontSize: 18,
     fontWeight: 800,
   },
-  optionOdds: {
-    color: "#84f0be",
+  optionPrice: {
+    color: "#7dffbc",
     fontWeight: 900,
+    fontSize: 18,
   },
-  optionBottom: {
+  optionCardBottom: {
     display: "flex",
     justifyContent: "space-between",
     gap: 8,
-    color: "#a6b5db",
+    color: "#a5b4d8",
     fontSize: 13,
   },
-  pickBadge: {
+  smallBadgeBlue: {
     position: "absolute",
     top: 10,
     right: 10,
     padding: "6px 8px",
     borderRadius: 999,
-    background: "rgba(88,116,255,0.20)",
+    background: "rgba(95,122,255,0.20)",
     fontSize: 11,
   },
-  winnerBadge: {
+  smallBadgeGreen: {
     position: "absolute",
     top: 10,
     right: 10,
     padding: "6px 8px",
     borderRadius: 999,
-    background: "rgba(54,221,143,0.20)",
+    background: "rgba(68,227,159,0.20)",
     fontSize: 11,
   },
-  adminResolveRow: {
+  resolveRow: {
     display: "flex",
     gap: 8,
-    alignItems: "center",
     flexWrap: "wrap",
+    alignItems: "center",
     marginTop: 14,
   },
-  resolveLabel: {
-    color: "#9db0d8",
+  resolveText: {
+    color: "#9fb0d7",
   },
-  commentBlock: {
-    marginTop: 16,
+  commentSection: {
+    marginTop: 18,
     paddingTop: 14,
     borderTop: "1px solid rgba(255,255,255,0.08)",
   },
-  commentTitle: {
+  commentHeader: {
     fontWeight: 800,
     marginBottom: 10,
+    textAlign: "center",
+    fontSize: 18,
   },
   commentInputRow: {
     display: "grid",
@@ -2050,7 +2206,34 @@ const styles = {
     padding: "10px 12px",
     borderRadius: 14,
     background: "rgba(255,255,255,0.04)",
-    color: "#dce3fb",
+    color: "#dce5ff",
+  },
+  quickStats: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    gap: 10,
+  },
+  quickStat: {
+    padding: 14,
+    borderRadius: 16,
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+  },
+  topMiniList: {
+    display: "grid",
+    gap: 10,
+  },
+  topMiniItem: {
+    padding: 12,
+    borderRadius: 14,
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 8,
   },
   leaderboardList: {
     display: "grid",
@@ -2059,69 +2242,68 @@ const styles = {
   leaderboardItem: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
     gap: 12,
+    alignItems: "center",
     padding: 16,
     borderRadius: 18,
-    background: "rgba(9,14,28,0.82)",
-    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.06)",
   },
   leaderLeft: {
     display: "flex",
-    alignItems: "center",
     gap: 12,
+    alignItems: "center",
   },
-  rankBubble: {
-    width: 34,
-    height: 34,
+  rankCircle: {
+    width: 36,
+    height: 36,
     borderRadius: "50%",
     display: "grid",
     placeItems: "center",
     background: "rgba(255,255,255,0.08)",
-    fontWeight: 800,
+    fontWeight: 900,
   },
   leaderName: {
     fontWeight: 800,
   },
-  leaderSub: {
-    color: "#9eb0d6",
+  leaderMeta: {
+    color: "#9fb0d7",
     fontSize: 12,
   },
   leaderRight: {
     textAlign: "right",
   },
   leaderMoney: {
-    color: "#7effb8",
+    color: "#78ffb7",
     fontWeight: 900,
   },
-  profileTopGrid: {
+  profileStats: {
     display: "grid",
     gridTemplateColumns: "repeat(4, 1fr)",
-    gap: 12,
+    gap: 10,
+    marginBottom: 18,
   },
-  profileStatCard: {
-    padding: 16,
-    borderRadius: 18,
-    background: "rgba(9,14,28,0.82)",
-    border: "1px solid rgba(255,255,255,0.08)",
+  profileStat: {
+    padding: 14,
+    borderRadius: 16,
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.06)",
     display: "flex",
     flexDirection: "column",
-    gap: 6,
+    gap: 4,
   },
-  sectionCard: {
-    padding: 20,
-    borderRadius: 22,
-    background: "rgba(9,14,28,0.82)",
-    border: "1px solid rgba(255,255,255,0.08)",
-  },
-  cardTitle: {
-    margin: "0 0 12px",
-    fontSize: 20,
+  subTitle: {
+    margin: "0 0 10px",
   },
   badgesWrap: {
     display: "flex",
     gap: 8,
     flexWrap: "wrap",
+  },
+  badgeChip: {
+    padding: "8px 12px",
+    borderRadius: 999,
+    color: "#eef3ff",
   },
   historyList: {
     display: "grid",
@@ -2140,14 +2322,14 @@ const styles = {
   historyTitle: {
     fontWeight: 800,
   },
-  historySub: {
-    color: "#9eb0d6",
+  historyMeta: {
+    color: "#9fb0d7",
     fontSize: 12,
   },
   historyProfit: {
     fontWeight: 900,
   },
-  proposalForm: {
+  formStack: {
     display: "grid",
     gap: 12,
   },
@@ -2155,22 +2337,22 @@ const styles = {
     display: "grid",
     gap: 10,
   },
-  proposalCard: {
-    padding: 16,
-    borderRadius: 18,
-    background: "rgba(9,14,28,0.82)",
-    border: "1px solid rgba(255,255,255,0.08)",
+  proposalItem: {
+    padding: 14,
+    borderRadius: 16,
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.06)",
     display: "flex",
     justifyContent: "space-between",
     gap: 12,
     alignItems: "start",
   },
-  proposalText: {
+  proposalTitle: {
     fontWeight: 800,
     marginBottom: 4,
   },
   proposalMeta: {
-    color: "#9eb0d6",
+    color: "#9fb0d7",
     fontSize: 12,
   },
   proposalActions: {
@@ -2178,16 +2360,12 @@ const styles = {
     gap: 8,
     flexWrap: "wrap",
   },
-  adminForm: {
-    display: "grid",
-    gap: 12,
-  },
-  adminGrid: {
+  adminRow: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gap: 10,
   },
-  optionEditRow: {
+  optionEditorRow: {
     display: "grid",
     gridTemplateColumns: "1fr 140px auto",
     gap: 10,
@@ -2199,43 +2377,43 @@ const styles = {
     gap: 10,
     flexWrap: "wrap",
   },
-  loginFeatures: {
-    display: "flex",
+  quickAdminList: {
+    display: "grid",
     gap: 10,
-    flexWrap: "wrap",
   },
-  chip: {
-    padding: "8px 12px",
-    borderRadius: 999,
-    background: "rgba(255,255,255,0.06)",
-    border: "1px solid rgba(255,255,255,0.08)",
-    color: "#dce4ff",
-  },
-  loadingCard: {
-    padding: 16,
-    borderRadius: 18,
-    background: "rgba(255,255,255,0.05)",
-  },
-  errorBox: {
+  quickAdminItem: {
     padding: 14,
     borderRadius: 16,
-    background: "rgba(255,89,89,0.14)",
-    border: "1px solid rgba(255,89,89,0.24)",
-    color: "#ffd6d6",
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.06)",
   },
-  successBox: {
-    padding: 14,
-    borderRadius: 16,
-    background: "rgba(70,225,152,0.14)",
-    border: "1px solid rgba(70,225,152,0.22)",
-    color: "#c7ffe1",
-  },
-  emptyState: {
+  emptyBlock: {
     padding: 18,
     borderRadius: 18,
     background: "rgba(255,255,255,0.04)",
     border: "1px dashed rgba(255,255,255,0.10)",
-    color: "#a4b2d7",
+    color: "#a5b4d9",
     textAlign: "center",
+  },
+  loadingCard: {
+    padding: 16,
+    borderRadius: 16,
+    background: "rgba(255,255,255,0.04)",
+  },
+  errorBanner: {
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 16,
+    background: "rgba(255,89,89,0.14)",
+    border: "1px solid rgba(255,89,89,0.24)",
+    color: "#ffd7d7",
+  },
+  successBanner: {
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 16,
+    background: "rgba(68,227,159,0.14)",
+    border: "1px solid rgba(68,227,159,0.24)",
+    color: "#d2ffe7",
   },
 };
